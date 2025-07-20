@@ -1,6 +1,9 @@
 #pragma once
 #include <string>
 
+/**
+ * @brief ITask 定义了任务接口，所有具体任务必须实现。
+ */
 class ITask {
 public:
     virtual ~ITask() = default;
