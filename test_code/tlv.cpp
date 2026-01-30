@@ -90,3 +90,80 @@ int main() {
     cout << result << endl;
     return 0;
 }
+
+
+
+// 解法2
+#include <bits/stdc++.h>
+
+using namespace std;
+
+
+vector<int> hexToBytes(const string &str)
+{
+    vector<int> res;
+    for (size_t i = 0; i < str.size(); i += 2) {
+        int tmp = stoi(str.substr(i, 2), nullptr, 16);
+        res.push_back(tmp);
+    }
+    return res;
+}
+
+bool looklikeTLV(vector<int> &values)
+{
+    if (values.size() < 3) {
+        return false;
+    }
+    int l = values[1] | (values[2] << 8);
+    if (l + 3 <= values.size()) {
+        return true;
+    }
+    return false;
+}
+
+void parseTLV(const vector<int> &bytes, int len, vector<pair<int, string>> &res)
+{
+    if (len < 3) {
+        return;
+    }
+    
+    int index = 0;
+    
+    while (index + 2 < len) {
+        auto tag = bytes[index];
+        int l = bytes[(index + 1)] | (bytes[(index + 2)] << 8);
+        
+        if (index + 3 + l > len) {
+            return;
+        }
+        
+        vector<int> values(bytes.begin() + index + 3, bytes.begin() + index + 3 + l);
+        
+        if (looklikeTLV(values)) {
+            parseTLV(values, l, res);
+        } else {
+            pair<int, string> tmp;
+            tmp.first = tag;
+            for (const auto &item : values) {
+                tmp.second.push_back(static_cast<char>(item));
+            }
+            res.push_back(tmp);
+        }
+        index = index + 3 + l;
+    }
+}
+
+int main () {
+    
+    const string str = "010A0011020041421202003334";
+    vector<int> bytes = hexToBytes(str);
+    vector<pair<int, string>> res;
+    parseTLV(bytes, bytes.size(), res);
+    
+    
+    for (const auto &item : res) {
+        cout << item.first << " " << item.second;
+        cout << endl;
+    }
+    return 0;
+}
