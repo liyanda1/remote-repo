@@ -3,40 +3,57 @@
 namespace executor {
 
 Executor::Executor()
-    : x_(0)
-    , y_(0)
-    , heading_(HEADING_NORTH)
-    , initialized_(false) {
+    : m_x(DEFAULT_COORDINATE)
+    , m_y(DEFAULT_COORDINATE)
+    , m_heading(DEFAULT_HEADING)
+    , m_initialized(false) {
 }
 
-void Executor::init(int x, int y, Heading heading) {
-    x_ = x;
-    y_ = y;
-    heading_ = heading;
-    initialized_ = true;
+Heading Executor::normalizeHeading(int32_t h) {
+    int32_t n = h % HEADING_MODULO;
+    if (n < 0) {
+        n += HEADING_MODULO;
+    }
+    return static_cast<Heading>(n);
+}
+
+void Executor::init(int32_t x, int32_t y, Heading heading) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_x = x;
+    m_y = y;
+    m_heading = normalizeHeading(static_cast<int32_t>(heading));
+    m_initialized = true;
 }
 
 void Executor::turnRight() {
-    // 右转 90 度：顺时针方向变化
-    heading_ = static_cast<Heading>((static_cast<int>(heading_) + 1) % 4);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_initialized) {
+        return;
+    }
+    m_heading = static_cast<Heading>(
+        (static_cast<int32_t>(m_heading) + HEADING_RIGHT_DELTA) % HEADING_MODULO);
 }
 
 void Executor::turnLeft() {
-    // 左转 90 度：逆时针方向变化
-    heading_ = static_cast<Heading>((static_cast<int>(heading_) + 3) % 4);
-}
-
-void Executor::getStatus(int& x, int& y, Heading& heading) const {
-    if (!initialized_) {
-        x = 0;
-        y = 0;
-        heading = HEADING_NORTH;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_initialized) {
         return;
     }
+    m_heading = static_cast<Heading>(
+        (static_cast<int32_t>(m_heading) + HEADING_LEFT_DELTA) % HEADING_MODULO);
+}
 
-    x = x_;
-    y = y_;
-    heading = heading_;
+void Executor::getStatus(int32_t& x, int32_t& y, Heading& heading) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_initialized) {
+        x = DEFAULT_COORDINATE;
+        y = DEFAULT_COORDINATE;
+        heading = DEFAULT_HEADING;
+        return;
+    }
+    x = m_x;
+    y = m_y;
+    heading = m_heading;
 }
 
 } // namespace executor

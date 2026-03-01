@@ -23,6 +23,7 @@ file(GLOB_RECURSE SOURCES
 
 # ---- Define test target ----
 
+find_package(Threads QUIET)
 add_executable(${TEST_TARGET} ${SOURCES})
 
 target_include_directories(${TEST_TARGET}
@@ -30,6 +31,9 @@ target_include_directories(${TEST_TARGET}
             ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(${TEST_TARGET} PRIVATE ${TARGET_LIB} cctest_main mockcpp)
+if(Threads_FOUND)
+    target_link_libraries(${TEST_TARGET} PRIVATE Threads::Threads)
+endif()
 
 set_target_properties(${TEST_TARGET} PROPERTIES CXX_STANDARD 14)
 target_compile_definitions(${TEST_TARGET} PRIVATE CUSTOMER_LOG)
