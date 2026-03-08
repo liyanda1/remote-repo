@@ -50,8 +50,10 @@ add_library(${TARGET_LIB} ${LIB_TYPE} ${SOURCES})
 target_link_libraries(${TARGET_LIB} PUBLIC mcl alert-intf clean-intf wifi-intf)
 
 target_include_directories(${TARGET_LIB}
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/deps
-    PUBLIC ${PROJECT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+            ${PROJECT_SOURCE_DIR}/deps
+            ${PROJECT_SOURCE_DIR}/include/private
+    PUBLIC  ${PROJECT_SOURCE_DIR}/include/public
 )
 
 target_compile_definitions(${TARGET_LIB} PRIVATE CUSTOMER_LOG)
