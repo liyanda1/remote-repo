@@ -1,0 +1,56 @@
+{
+  "task_id": "refactor-auth-001",
+  "task_description": "重构用户认证模块：从单体类拆分为策略模式",
+  "created_at": "2026-03-22T10:00:00",
+  "total_steps": 5,
+  "current_step": 0,
+  "overall_status": "pending",
+  "steps": [
+    {
+      "id": 1,
+      "name": "分析现有代码",
+      "description": "读取当前AuthService类，识别需要提取的方法和责任，输出分析报告到analysis.md",
+      "status": "pending",
+      "prompt": "请分析 src/services/AuthService.java 文件，识别：\n1. 当前类承担的所有责任\n2. 可以提取为策略的方法\n3. 接口设计建议\n将分析结果写入 .orchestrator/results/step1-analysis.md",
+      "timeout_minutes": 15
+    },
+    {
+      "id": 2,
+      "name": "设计策略接口",
+      "description": "基于分析结果，创建认证策略接口和具体实现类",
+      "status": "pending",
+      "prompt": "根据 step1-analysis.md 的分析结果：\n1. 在 src/auth/strategies/ 目录下创建策略接口\n2. 创建3个具体策略实现类\n3. 确保接口设计符合开闭原则",
+      "timeout_minutes": 20
+    },
+    {
+      "id": 3,
+      "name": "迁移现有调用",
+      "description": "将现有代码中对AuthService的调用迁移到新的策略模式",
+      "status": "pending",
+      "prompt": "搜索项目中所有使用 AuthService 的地方，修改为使用新的策略模式。保持原有功能不变。",
+      "timeout_minutes": 30
+    },
+    {
+      "id": 4,
+      "name": "删除旧代码",
+      "description": "删除旧的AuthService类和相关代码",
+      "status": "pending",
+      "prompt": "确认所有调用都已迁移后，删除 src/services/AuthService.java 和相关的废弃代码。",
+      "timeout_minutes": 10
+    },
+    {
+      "id": 5,
+      "name": "测试验证",
+      "description": "运行所有测试，确保重构后功能正常",
+      "status": "pending",
+      "prompt": "1. 运行单元测试: mvn test\n2. 运行集成测试: mvn verify\n3. 检查测试覆盖率是否达标\n4. 将测试结果写入 .orchestrator/results/step5-test-report.md",
+      "timeout_minutes": 20
+    }
+  ],
+  "metadata": {
+    "mode": "step-by-step",
+    "auto_advance": false,
+    "project_type": "java",
+    "risk_level": "medium"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "task_id": "tdd-feature-001",
+  "task_description": "TDD开发新功能：用户积分系统",
+  "created_at": "2026-03-22T10:00:00",
+  "total_steps": 6,
+  "current_step": 0,
+  "overall_status": "pending",
+  "steps": [
+    {
+      "id": 1,
+      "name": "需求详设",
+      "description": "编写详细设计文档，定义积分规则、计算逻辑、数据模型",
+      "status": "pending",
+      "prompt": "基于需求编写详细设计文档：\n1. 积分获取规则（注册、登录、消费等场景）\n2. 积分计算算法\n3. 数据模型设计（ER图描述）\n4. API接口设计\n输出到 docs/design/points-system-design.md",
+      "template": "docs/templates/detail-design-template.md",
+      "timeout_minutes": 30
+    },
+    {
+      "id": 2,
+      "name": "用例设计",
+      "description": "基于详设编写测试用例，覆盖正常和异常场景",
+      "status": "pending",
+      "prompt": "根据详设文档编写测试用例：\n1. 单元测试用例（至少10个）\n2. 边界条件测试\n3. 异常场景测试\n4. 集成测试用例\n输出到 test/points-system-test-cases.md",
+      "template": "docs/templates/test-case-template.md",
+      "timeout_minutes": 25
+    },
+    {
+      "id": 3,
+      "name": "编写失败测试",
+      "description": "先写测试代码，确保测试失败（红）",
+      "status": "pending",
+      "prompt": "根据测试用例，先编写测试代码：\n1. 创建 PointsServiceTest.java\n2. 实现所有测试方法（此时应该编译/运行失败）\n3. 运行测试确认失败（红阶段）\n输出测试结果到 .orchestrator/results/step3-red-test.log",
+      "timeout_minutes": 20
+    },
+    {
+      "id": 4,
+      "name": "实现功能代码",
+      "description": "编写最小实现使测试通过（绿）",
+      "status": "pending",
+      "prompt": "实现 PointsService 类，使所有测试通过：\n1. 创建 src/services/PointsService.java\n2. 实现积分计算逻辑\n3. 运行测试确认通过（绿阶段）\n不要过度设计，只需让测试通过即可",
+      "timeout_minutes": 30
+    },
+    {
+      "id": 5,
+      "name": "重构优化",
+      "description": "重构代码，消除重复，提高可读性（重构）",
+      "status": "pending",
+      "prompt": "在测试通过的基础上重构代码：\n1. 消除代码重复\n2. 优化命名\n3. 提取方法/类\n4. 确保重构后测试仍然通过\n5. 检查代码覆盖率",
+      "timeout_minutes": 20
+    },
+    {
+      "id": 6,
+      "name": "文档和提交",
+      "description": "完善文档，准备代码提交",
+      "status": "pending",
+      "prompt": "完成最后工作：\n1. 更新API文档\n2. 编写CHANGELOG\n3. 生成git commit message\n4. 准备Code Review材料\n输出提交摘要到 .orchestrator/results/step6-summary.md",
+      "timeout_minutes": 15
+    }
+  ],
+  "metadata": {
+    "mode": "step-by-step",
+    "auto_advance": false,
+    "project_type": "java",
+    "workflow": "tdd",
+    "templates": {
+      "design": "docs/templates/detail-design-template.md",
+      "testcase": "docs/templates/test-case-template.md"
+    }
+  }
+}
