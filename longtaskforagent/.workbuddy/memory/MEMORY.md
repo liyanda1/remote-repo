@@ -1,0 +1,48 @@
+# 工作记忆
+
+## 用户信息
+
+- 华为内部工程师，使用 Windows 11
+- 偏好结构化分步流程，要求详细文档说明
+- 开发工具：OpenCode（内部平台），非 WorkBuddy/Claude Code
+
+## 当前项目
+
+**工程路径：** `d:/application/Google_chrome/谷歌浏览器下载/longtaskforagent`
+
+**项目描述：** 将 long-task-agent SDD 框架改造为符合部门 IPD/SDD 规范的开发流程范式。
+
+### 改造状态（2026-04-16 完成）
+
+已创建 6 个新 Skill，全部替换 long-task-* 系列（旧文件已全部清理）：
+
+| Skill | 职责 |
+|-------|------|
+| sdd-router | 路由器：检测 AR 目录状态 → 分发阶段 skill |
+| sdd-task-requirements | 准备 + 需求澄清：读域知识 + srs.md + tasks.md |
+| sdd-task-design | 设计：基于 srs.md 生成 design.md |
+| sdd-task-develop | 开发：TDD 逐任务实现（基于 tasks.md）|
+| sdd-task-review | 审查：子 Agent 合规性检查（S/D/C 三维）|
+| sdd-task-st | ST：验收测试 + 归档 AR |
+
+### 目录结构约定
+
+```
+component/
+├── AGENTS.md（可选，有则读）
+├── include/
+├── src/
+├── tests/
+└── specs/
+    ├── component-detail-design/组件_spec.md（已有，必读）
+    ├── changes/ARxxx-topic/（进行中 AR：srs.md、design.md、tasks.md）
+    └── archive/ARxxx-topic/（归档 AR：srs.md、design.md、st-cases.md）
+```
+
+### 关键约定
+
+- design.md 有部门模板（用户待提供，暂用内置模板）
+- srs.md 无模板，用内置格式
+- tasks.md 用 Markdown 格式（非 JSON）
+- AR 编号由用户提供（格式自由）
+- ST 通过后：`specs/changes/ARxxx/` → `specs/archive/ARxxx/`（tasks.md 不归档）
