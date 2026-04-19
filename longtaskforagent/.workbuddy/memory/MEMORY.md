@@ -46,3 +46,19 @@ component/
 - tasks.md 用 Markdown 格式（非 JSON）
 - AR 编号由用户提供（格式自由）
 - ST 通过后：`specs/changes/ARxxx/` → `specs/archive/ARxxx/`（tasks.md 不归档）
+
+### OpenCode 适配（2026-04-18 完成）
+
+`.opencode/` 目录下提供完整的三维适配：
+
+**Command（`.opencode/commands/`）**：6 个 slash command
+- `/sdd` — 主入口（自动路由）
+- `/sdd-req`、`/sdd-design`、`/sdd-dev [任务ID]`、`/sdd-review`、`/sdd-st` — 各阶段直连
+
+**Agent（`.opencode/agents/`）**：2 个专属代理
+- `@sdd-build` — 主流程代理（primary，全工具权限，sdd-* skill allow）
+- `@sdd-reviewer` — 只读审查子代理（subagent，全工具关闭，用于 S/D/C 三维审查）
+
+**Plugin**：不适配（OpenCode plugin 是 JS/TS 工具扩展，本流程无需新增原生工具）
+
+使用时将 `.opencode/` 目录整体复制到目标组件工程根目录。

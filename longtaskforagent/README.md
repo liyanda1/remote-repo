@@ -15,16 +15,147 @@
 
 ---
 
+## OpenCode 适配
+
+本工程对 OpenCode 的三个扩展维度均进行了适配：**skill（按需加载）、command（用户触发入口）、agent（专属代理）**。
+
+### 安装
+
+将工程中的 `.opencode/` 目录整体复制到你的**目标组件工程根目录**：
+
+```
+cp -r /path/to/longtaskforagent/.opencode  /path/to/your-component/
+```
+
+复制完成后，目标工程的 `.opencode/` 目录结构如下：
+
+```
+your-component/
+└── .opencode/
+    ├── commands/          ← /sdd* slash command 定义
+    │   ├── sdd.md
+    │   ├── sdd-req.md
+    │   ├── sdd-design.md
+    │   ├── sdd-dev.md
+    │   ├── sdd-review.md
+    │   └── sdd-st.md
+    └── agents/            ← 专属代理定义
+        ├── sdd-build.md   ← 主流程代理（全工具权限）
+        └── sdd-reviewer.md← 只读审查子代理
+```
+
+> **注意**：skill 本身已存放在 `longtaskforagent/skills/` 目录下，OpenCode 会沿目录树向上查找，无需额外复制 skill 文件。如需在完全独立的环境中使用，可在 `opencode.json` 中显式配置 skill 路径（见下方）。
+
+---
+
+### Command（用户触发入口）
+
+共 6 个 `/sdd*` slash command，覆盖主入口和各阶段直连：
+
+| Command | 说明 | 典型使用场景 |
+|---------|------|------------|
+| `/sdd` | **主入口**：自动检测状态，路由到正确阶段 | 每次会话开始时 |
+| `/sdd-req` | 直接进入需求澄清阶段 | 开启新 AR，或需要补充需求文档 |
+| `/sdd-design` | 直接进入详细设计阶段 | srs.md 已就绪，开始出 design.md |
+| `/sdd-dev` | 直接进入开发阶段 | design.md 已就绪，开始 TDD 实现 |
+| `/sdd-review` | 直接进入合规审查阶段 | 所有任务 passing，触发 S/D/C 三维审查 |
+| `/sdd-st` | 直接进入验收测试 + 归档阶段 | review PASS 后，触发 ST 和 AR 归档 |
+
+**推荐用法：**
+
+```
+# 每次会话只需一个命令，路由器自动判断阶段
+/sdd
+
+# 强制进入某阶段（跳过路由，高级用法）
+/sdd-dev T003
+```
+
+---
+
+### Agent（专属代理）
+
+提供两个专属代理，在 OpenCode 中通过 `@agent-name` 调用：
+
+#### `@sdd-build`（主流程代理）
+
+- **模式**：primary（可直接交互）
+- **工具权限**：全开（write / edit / bash / webfetch）
+- **Skill 权限**：`sdd-*` 全部 allow，其他 ask
+- **适用场景**：完整的 SDD 流程会话，等价于使用默认代理 + 加载 sdd-router
+
+使用方式：
+```
+# 在对话框中指定代理
+@sdd-build /sdd
+
+# 或在 OpenCode 启动时指定
+opencode --agent sdd-build
+```
+
+#### `@sdd-reviewer`（只读审查子代理）
+
+- **模式**：subagent（由主代理调用，也可直接使用）
+- **工具权限**：全部关闭（write / edit / bash 均禁用）
+- **职责**：执行 S/D/C 三维独立审查，输出结构化审查报告
+- **设计原则**：物理隔离写权限，确保审查结论不受代码修改能力干扰
+
+`sdd-task-review` skill 会自动派发子任务给 `@sdd-reviewer`；也可以直接调用：
+```
+@sdd-reviewer 请对当前 AR 执行合规性审查
+```
+
+---
+
+### 在 opencode.json 中配置 skill 路径（独立部署时）
+
+如果目标工程与 `longtaskforagent` 不在同一个 git 工作树下，skill 无法被自动发现，需要在目标工程的 `opencode.json` 中显式指定：
+
+```json
+{
+  "permission": {
+    "skill": {
+      "sdd-*": "allow"
+    }
+  }
+}
+```
+
+同时将 skill 目录放入 `.opencode/skills/`：
+
+```
+your-component/
+└── .opencode/
+    └── skills/
+        ├── sdd-router/SKILL.md
+        ├── sdd-task-requirements/SKILL.md
+        ├── sdd-task-design/SKILL.md
+        ├── sdd-task-develop/SKILL.md
+        ├── sdd-task-review/SKILL.md
+        └── sdd-task-st/SKILL.md
+```
+
+---
+
 ## 工程结构
 
 ```
 longtaskforagent/
 ├── README.md                              ← 本文档
+├── .opencode/
+│   ├── commands/                          ← OpenCode slash command 定义
+│   │   ├── sdd.md                         ← /sdd（主入口）
+│   │   ├── sdd-req.md                     ← /sdd-req（需求阶段）
+│   │   ├── sdd-design.md                  ← /sdd-design（设计阶段）
+│   │   ├── sdd-dev.md                     ← /sdd-dev（开发阶段）
+│   │   ├── sdd-review.md                  ← /sdd-review（审查阶段）
+│   │   └── sdd-st.md                      ← /sdd-st（验收测试）
+│   └── agents/                            ← OpenCode 专属代理定义
+│       ├── sdd-build.md                   ← @sdd-build（主流程代理）
+│       └── sdd-reviewer.md               ← @sdd-reviewer（只读审查子代理）
 ├── docs/
-│   ├── templates/
-│   │   └── design-template.md             ← design.md 部门模板（优先读取）
-│   ├── README.codex.md                    ← Codex 平台安装说明（旧，保留备用）
-│   └── README.opencode.md                 ← OpenCode 平台安装说明（旧，保留备用）
+│   └── templates/
+│       └── design-template.md             ← design.md 部门模板（优先读取）
 └── skills/
     ├── sdd-router/                        ← 路由器：状态检测 + 阶段分发
     │   └── SKILL.md
