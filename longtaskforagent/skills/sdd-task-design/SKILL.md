@@ -21,7 +21,8 @@ description: "Use when srs.md exists but design.md does not - read component con
 4. **逐节设计审批** — 与用户逐节确认设计内容
 5. **生成 design.md** — 按部门模板（或默认模板）写入文件
 6. **更新 tasks.md** — 确认任务分解与设计一致
-7. **移交开发阶段** — 调用 `sdd-router:sdd-task-develop`
+7. **刷新组件详细设计** — 分析 AR 对组件详设的影响，按需更新组件_spec.md
+8. **移交开发阶段** — 调用 `sdd-router:sdd-task-develop`
 
 **终态是调用 sdd-task-develop。** 不要调用其他 skill。
 
@@ -251,15 +252,61 @@ flowchart TD
 
 ---
 
-## Step 7：移交开发阶段
+## Step 7：刷新组件详细设计
 
-design.md 和更新后的 tasks.md 保存完成后：
+> AR 的实现可能引入新接口、新数据结构或架构调整，这些变化需要同步反映到组件整体设计文档中，以保持文档与实现的一致性。
+
+### 7a. 影响分析
+
+对比 design.md 与 `specs/component-detail-design/` 下的组件详设文件，识别本次 AR 是否导致以下变化：
+
+| 变化类型 | 判断依据 | 需更新组件详设？ |
+|---------|---------|--------------|
+| 新增对外接口 | design.md §3 有新增的公开函数/类 | **是** |
+| 接口签名变更 | design.md §3 修改了已有接口的参数或返回值 | **是** |
+| 新增数据结构/枚举 | design.md 引入了新的公开数据类型 | **是** |
+| 模块新增或重组 | design.md §2 的模块影响分析涉及新文件或模块拆分 | **是** |
+| 架构约束或原则变化 | 本 AR 建立了新的设计模式或约束 | **是** |
+| 仅修改私有实现 | 无公开接口或结构变化，仅修改 .cpp 内部逻辑 | **否** |
+| 仅修改测试代码 | 不涉及接口和结构 | **否** |
+
+### 7b. 执行更新（如有变化）
+
+若 7a 判断需要更新，**将 design.md 中已确认的设计决策同步到组件详设**：
+
+- 在组件详设对应章节追加或修改接口描述、数据类型、模块说明
+- 保持组件详设的原有结构和风格，勿重写无关内容
+- 在变更处标注 AR 来源，例如：`<!-- 引入自 AR-2026-0417：add-priority-support -->`
+- 若组件详设不存在对应章节，可新增章节并说明来源
+
+**写入格式遵循组件详设现有风格**（有代码块用代码块，有表格用表格）。
+
+### 7c. 无需更新时
+
+若本次 AR 仅修改内部实现，向用户说明：
+
+```
+组件详细设计无需更新。
+本次 AR 修改范围：[一句话描述]
+不影响组件对外接口和整体架构。
+```
+
+### 7d. 用户确认
+
+将更新内容（或"无需更新"结论）呈现给用户确认，再进入 Step 8。
+
+---
+
+## Step 8：移交开发阶段
+
+design.md、tasks.md 和组件详设（如有更新）保存完成后：
 
 1. 输出移交摘要：
    - AR 编号与主题
    - 选定的设计方案
    - 受影响的文件清单
    - 任务数量与开发顺序建议
+   - 组件详设更新情况（已更新哪些章节 / 无需更新及原因）
    - 注意事项（特殊约束、已知风险）
 
 2. **必须调用：** 调用 `sdd-router:sdd-task-develop` 开始代码开发
@@ -305,6 +352,6 @@ design.md 和更新后的 tasks.md 保存完成后：
 ## 集成说明
 
 **调用方：** sdd-router（srs.md 存在，design.md 缺失时）
-**链接到：** sdd-task-develop（Step 7，设计确认后）
-**产出：** `specs/changes/ARxxx-topic/design.md`（更新 `tasks.md`）
+**链接到：** sdd-task-develop（Step 8，设计确认后）
+**产出：** `specs/changes/ARxxx-topic/design.md`（更新 `tasks.md`）；如有接口/架构变化，同步更新 `specs/component-detail-design/组件_spec.md`
 **读取：** `specs/component-detail-design/组件_spec.md`、`specs/changes/ARxxx-topic/srs.md`、`include/`、`src/`
