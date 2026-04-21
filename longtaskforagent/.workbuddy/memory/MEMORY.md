@@ -22,7 +22,7 @@
 | sdd-task-requirements | 准备 + 需求澄清：读域知识 + srs.md + tasks.md |
 | sdd-task-design | 设计：基于 srs.md 生成 design.md |
 | sdd-task-develop | 开发：TDD 逐任务实现（基于 tasks.md）|
-| sdd-task-review | 审查：子 Agent 合规性检查（S/D/C 三维）|
+| sdd-task-review | 审查：可选多模型并行子 Agent 合规性检查（S/D/C 三维），配置后任一 FAIL 则整体 FAIL |
 | sdd-task-st | ST：验收测试 + 归档 AR |
 
 ### 目录结构约定

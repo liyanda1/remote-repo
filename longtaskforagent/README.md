@@ -191,7 +191,8 @@ longtaskforagent/
 ┌──────────────────┐
 │ sdd-task-design  │  Step 1-2: 重建领域知识 + 分析设计输入
 └──────┬───────────┘  Step 3-4: 提案 2-3 种方案 + 逐节审批
-       │              Step 5-7: 生成 design.md + 更新 tasks.md + 移交开发
+       │              Step 5-6: 生成 design.md + 更新 tasks.md
+       │              Step 7-8: 刷新组件详设（按需）+ 移交开发
        ▼
 ┌──────────────────┐
 │ sdd-task-develop │  Step 1-2: 定向 + 环境检查
@@ -319,9 +320,9 @@ use skill sdd-router:sdd-task-design
 
 **进入条件**：srs.md 存在，design.md 缺失。
 
-**退出条件**：design.md 已生成并得到用户确认，tasks.md 已更新。
+**退出条件**：design.md 已生成并得到用户确认，tasks.md 已更新，组件详设已按需同步。
 
-**流程（7 步）**：
+**流程（8 步）**：
 
 1. **重建领域知识** — 读取组件详设、srs.md、代码接口、检查部门模板
 2. **分析设计输入** — 提取功能点、NFR、接口约束、架构约束
@@ -329,16 +330,20 @@ use skill sdd-router:sdd-task-design
 4. **逐节设计审批** — 架构、接口、算法、错误处理、测试策略
 5. **生成 design.md** — 按部门模板或内置模板写入
 6. **更新 tasks.md** — 确认任务分解与设计一致
-7. **移交开发** — 调用 sdd-task-develop
+7. **刷新组件详细设计** — 分析 AR 对组件整体架构的影响，按需更新 `组件_spec.md`（新增/修改接口、数据结构、模块说明）
+8. **移交开发阶段** — 调用 sdd-task-develop
 
 **产出文件**：
 - `specs/changes/ARxxx-topic/design.md`
 - 更新 `specs/changes/ARxxx-topic/tasks.md`
+- 按需更新 `specs/component-detail-design/组件_spec.md`（有接口/架构变化时）
 
 **模板优先级**：
 1. `specs/templates/design-template.md`
 2. `docs/templates/design-template.md`
 3. Skill 内置默认模板
+
+
 
 ---
 

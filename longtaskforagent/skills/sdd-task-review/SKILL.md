@@ -9,6 +9,8 @@ description: "Use when all tasks in tasks.md are passing - run spec and design c
 
 **核心原则：** 审查运行在独立子 Agent 中；主 Agent 只传递文件路径，不读取文件内容。
 
+**可选：多模型审查。** 若 `opencode.json` 中配置了 `review.models`（多个模型），则多模型并行审查，任一模型 FAIL 则整体 FAIL；未配置则使用当前主模型单模型审查。
+
 <HARD-GATE>
 任何审查项 FAIL 时，必须先修复再继续 ST。不得跳过审查，不得对「简单」AR 豁免。
 </HARD-GATE>
@@ -18,9 +20,9 @@ description: "Use when all tasks in tasks.md are passing - run spec and design c
 你必须为以下每个步骤创建 TodoWrite 任务，并按顺序完成：
 
 1. **收集路径参数** — 收集所有相关文件路径
-2. **构建子 Agent 提示** — 读取审查提示模板，填充路径参数
-3. **派发子 Agent** — 启动独立审查 Agent
-4. **解析审查结果** — 读取审查结论，处理 PASS / FAIL
+2. **检查多模型配置** — 读取 opencode.json，判断单模型 or 多模型
+3. **派发子 Agent** — 使用内置审查提示模板，填充路径参数启动审查 Agent（单模型 1 个 / 多模型 N 个并行）
+4. **解析审查结果** — 单模型直接判定；多模型汇总，任一 NO 即 FAIL
 5. **修复 + 重审**（如 FAIL）— 修复问题，重新派发子 Agent
 6. **记录审查结果** — 在 tasks.md 中记录
 7. **移交 ST 阶段** — 调用 `sdd-router:sdd-task-st`
@@ -31,7 +33,7 @@ description: "Use when all tasks in tasks.md are passing - run spec and design c
 
 ## Step 1：收集路径参数
 
-收集以下路径（不读取文件内容，只收集路径）：
+收集以下路径（不读取文件内容，只收集路径 — **`tasks_file` 除外**，需读取其进度记录获取 base_sha）：
 
 | 参数 | 路径 | 说明 |
 |------|------|------|
@@ -45,27 +47,47 @@ description: "Use when all tasks in tasks.md are passing - run spec and design c
 | `changed_tests` | `tests/xxx_test.cpp` 等 | 本次 AR 新增/修改的测试文件列表 |
 | `base_sha` | `git rev-parse HEAD~N` | AR 开始前的 git SHA（用于 diff）|
 
-获取 base_sha：
-```bash
-# 在 tasks.md 进度记录中查找第一个会话的提交，或通过 git log 找到 AR 开始前的 SHA
-git log --oneline -20
+获取 base_sha（**优先 tasks.md，git log 兜底**）：
+1. 读取 `tasks_file`（tasks.md）的「进度记录」节，找到第一条记录中的 commit SHA → 即为 base_sha
+2. 若 tasks.md 中无 commit 记录，则通过 `git log --oneline -20` 查找 AR 开始前的 SHA 作为兜底
+
+---
+
+## Step 2：检查多模型配置
+
+读取工程根目录的 `opencode.json`，检查是否存在 `review.models` 配置：
+
+```json
+{
+  "review": {
+    "models": [
+      { "id": "primary", "name": "claude-sonnet-4-20250514" },
+      { "id": "secondary", "name": "gpt-4o" }
+    ]
+  }
+}
 ```
 
+**判断分支：**
+
+| 条件 | 模式 | 后续行为 |
+|------|------|---------|
+| `review.models` 存在且长度 ≥ 2 | **多模型审查** | Step 3 为每个模型派发独立子 Agent，Step 4 汇总多模型结论 |
+| `review.models` 不存在或长度 < 2 | **单模型审查** | Step 3 派发 1 个子 Agent（使用当前主模型），Step 4 直接判定 |
+
+将判断结果存为变量：
+- `multi_model = true/false`
+- `review_models = [...]`（多模型时为配置列表，单模型时为 `[{ id: "default", name: "当前主模型" }]`）
+
 ---
 
-## Step 2：构建子 Agent 提示
+## Step 3：派发子 Agent
 
-检查是否存在审查提示模板：
-- `skills/sdd-task-review/prompts/review-prompt.md`（优先）
-- 不存在则使用本 skill 内嵌的模板（Step 3 中的 inline prompt）
+根据 Step 2 的判断结果，选择派发方式。
 
-使用文件路径参数填充模板变量。
+### 单模型模式（`multi_model = false`）
 
----
-
-## Step 3：派发子 Agent（OpenCode 方式）
-
-**OpenCode 环境下**，使用 `@mention` 语法或平台原生子 Agent 机制：
+派发 **1 个**子 Agent，使用当前主模型：
 
 ```
 Agent(
@@ -146,26 +168,143 @@ Agent(
 )
 ```
 
+### 多模型模式（`multi_model = true`）
+
+为 `review_models` 中的**每个模型**分别启动一个独立审查子 Agent，所有子 Agent **并行执行**。
+
+```
+Agent(
+  description = "AR [ARxxx] 合规性审查 — {model_id} ({model_name})",
+  model = "{model_name}",
+  prompt = """
+你是一名代码合规性审查专家，当前审查模型为 {model_id}（{model_name}）。
+请按以下规则独立审查，给出你的专业判断。
+
+== 审查目标文件（路径）==
+- srs.md: {srs_file}
+- design.md: {design_file}
+- 修改的头文件: {changed_headers}
+- 修改的源文件: {changed_sources}
+- 修改的测试文件: {changed_tests}
+- 组件详设: {spec_file}
+
+== 使用工具读取上述文件内容，然后执行以下所有审查维度 ==
+
+[审查维度 S/D/C 的内容与单模型模式完全一致，此处省略]
+
+## 输出格式
+
+请以下面的格式输出审查结论（注意在标题中标注你的模型标识）：
+
+```markdown
+## 审查结论 [{model_id}]
+
+**审查模型：** {model_name}
+**总体判断：** PASS / FAIL
+
+### S — 需求符合性
+| S1 | YES/NO | [说明] |
+...
+
+### D — 设计符合性
+| D1 | YES/NO | [说明] |
+...
+
+### C — 组件规范符合性
+| C1 | YES/NO | [说明] |
+...
+
+### 问题列表（仅 NO 项）
+| 严重性 | 维度 | 问题描述 | 修复建议 |
+|-------|------|---------|---------|
+```
+  """
+)
+```
+
+**并行策略：** 所有模型的子 Agent 同时派发，不串行等待；每个子 Agent 在独立上下文中读取文件、独立判断。
+
 ---
 
 ## Step 4：解析审查结果
 
-读取子 Agent 的输出：
+根据 Step 2 的模式，选择解析方式。
+
+### 单模型模式（`multi_model = false`）
+
+直接读取子 Agent 的输出，判定 PASS / FAIL：
 
 **PASS（所有 S1-S5、D1-D4、C1-C3 均为 YES）：**
-1. 在 tasks.md 末尾追加审查记录：
-   ```markdown
-   ## Review 记录
-   - 日期：YYYY-MM-DD
-   - 结果：PASS
-   - 审查维度：S1-S5 PASS, D1-D4 PASS, C1-C3 PASS
-   ```
-2. 进入 Step 6
+1. 进入 Step 6（记录审查结果）
 
 **FAIL（任何维度为 NO）：**
 1. 读取问题列表
 2. 对 Critical / Important 问题，进入 Step 5（修复循环）
 3. 对 Minor 问题，可选择立即修复或记录为待办（通过 AskUserQuestion 与用户确认）
+
+### 多模型模式（`multi_model = true`）
+
+收集所有子 Agent 的输出，按以下规则汇总：
+
+#### 4a. 逐项合并
+
+对每个审查项（S1-S5、D1-D4、C1-C3），比较所有模型的结论：
+
+| 合并规则 | 说明 |
+|---------|------|
+| 所有模型均为 YES → **YES** | 无异议，通过 |
+| 任一模型为 NO → **NO** | 保守策略：一票否决 |
+| 模型结论有分歧 → **NO + 分歧标注** | 标注哪些模型判 YES、哪些判 NO |
+
+#### 4b. 生成汇总报告
+
+```markdown
+## 多模型审查汇总报告
+
+**AR：** ARxxx-topic
+**审查时间：** YYYY-MM-DD
+**参与模型：** N 个
+
+---
+
+### 模型审查结论
+
+| 模型 | 模型名称 | 总体判断 |
+|------|---------|---------|
+| primary | xxx | PASS / FAIL |
+| secondary | xxx | PASS / FAIL |
+
+---
+
+### 汇总结论
+
+| 维度 | 审查项 | 汇总结果 | 分歧说明 |
+|------|--------|---------|---------|
+| S | S1 | YES/NO | [如有分歧，列出各模型结论] |
+
+### 问题列表（所有 NO 项 + 严重性）
+
+| 严重性 | 维度 | 审查项 | 判定 NO 的模型 | 问题描述 | 修复建议 |
+|-------|------|--------|-------------|---------|---------|
+
+---
+
+### 总体判断
+
+**判断：PASS / FAIL**
+
+**PASS 条件：** 所有审查项汇总结果均为 YES。
+**FAIL 条件：** 任一审查项汇总结果为 NO（任一模型判 NO 即触发）。
+```
+
+#### 4c. 判定后续流程
+
+**PASS（所有审查项汇总均为 YES）：** 进入 Step 6
+
+**FAIL（任一审查项汇总为 NO）：**
+1. 读取问题列表
+2. 对 Critical / Important 问题，进入 Step 5
+3. 对 Minor 问题，通过 AskUserQuestion 与用户确认
 
 ---
 
@@ -179,7 +318,7 @@ Agent(
    - 修复规范违规（C 维度）→ 按规范调整代码
 2. 如果修复需要修改 design.md（发现设计有误）→ 通过 AskUserQuestion 报告给用户，等待确认后再修复
 3. 修复完成后重新运行测试，确认 Green
-4. 重新派发子 Agent（只审查修改过的维度）
+4. 按 Step 2 的模式重新派发子 Agent（多模型时派发所有模型，单模型时派发 1 个），**审查全部维度**
 5. 最多 3 轮修复 + 重审
 
 **超过 3 轮仍有 FAIL：**
@@ -198,6 +337,8 @@ Agent(
 ### YYYY-MM-DD 审查记录
 
 - 审查结果：PASS（第 N 轮）
+- 审查模式：单模型 / 多模型
+- 参与模型：[模型名称列表]
 - S 维度：全部通过
 - D 维度：全部通过
 - C 维度：全部通过
@@ -237,11 +378,13 @@ Agent(
 | 把多个问题合并为一个发现 | 每个问题单独列出 |
 | "代码看起来对" | PASS 必须有具体的 YES 证据 |
 | 修改 srs.md / design.md 来规避问题 | 先问用户，经批准才能修改 |
+| 多模型时只重审修复的维度 | 重审必须全维度（不同模型可能发现新问题）|
 
 ## 集成说明
 
 **调用方：** sdd-router（所有任务 passing，review 未完成时）
 **链接到：** sdd-task-st（Step 7，审查 PASS 后）
-**派发：** 审查子 Agent（独立上下文）
+**派发：** 审查子 Agent（独立上下文）；多模型时并行派发多个，单模型时派发 1 个
+**模型配置：** 从 `opencode.json` 的 `review.models` 读取（可选，未配置则单模型）
 **读取（仅路径）：** srs.md、design.md、tasks.md、组件详设、修改的代码文件
-**产出：** 更新后的 tasks.md（含审查记录）；审查报告（子 Agent 输出）
+**产出：** 更新后的 tasks.md（含审查记录）；多模型时含汇总审查报告

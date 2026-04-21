@@ -68,7 +68,19 @@ Session Start
    | `tasks.md` 中存在 `status: pending` 或 `status: in_progress` 的任务 | `sdd-router:sdd-task-develop` |
    | 所有任务 `status: passing`，但无 `## Review` 通过记录 | `sdd-router:sdd-task-review` |
    | Review 已 PASS，但无 ST 通过记录 | `sdd-router:sdd-task-st` |
-   | ST 已通过，AR 目录在 `specs/changes/` 下 | 提示用户：归档 AR 到 `specs/archive/ARxxx-topic/`，或开启新 AR |
+   | ST 已通过，AR 目录在 `specs/changes/` 下 | 提示用户：归档 AR 到 `specs/archive/ARxxx-topic/`，或使用 `/sdd-reactivate` 对已归档 AR 进行返工 |
+
+## 归档 AR 返工
+
+当 `specs/changes/` 为空但 `specs/archive/` 下有已归档 AR 时：
+
+```
+检测到所有 AR 已归档。可进行的操作：
+
+1. 开启新 AR — 直接描述新需求，将启动需求澄清阶段
+2. 返工已归档 AR — 使用 /sdd-reactivate <AR编号> <返工说明>
+   例如：/sdd-reactivate AR123-fix-bug 实现逻辑有误需要修改代码
+```
 
 ## 目录结构参考
 
