@@ -1,0 +1,14 @@
+{
+  "eval_id": 4,
+  "eval_name": "tasks-passing-no-review",
+  "expected_skill": "sdd-task-review",
+  "without_skill_behavior": "可能直接提交或开始新任务",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "会调用 sdd-task-review skill",
+      "passed": true,
+      "evidence": "有 pending review 时，agent 可能知道要做 review，但无 skill 指引可能跳过"
+    }
+  ]
+}

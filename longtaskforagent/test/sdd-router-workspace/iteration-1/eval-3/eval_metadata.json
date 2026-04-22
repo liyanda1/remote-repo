@@ -1,0 +1,15 @@
+{
+  "eval_id": 3,
+  "eval_name": "ar-pending-tasks",
+  "prompt": "design.md 已存在，tasks.md 中有 pending 任务",
+  "test_project": "test-project-3",
+  "expected_skill": "sdd-task-develop",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "调用了 sdd-task-develop skill",
+      "passed": null,
+      "evidence": null
+    }
+  ]
+}

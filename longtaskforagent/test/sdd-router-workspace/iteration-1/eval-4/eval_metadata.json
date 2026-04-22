@@ -1,0 +1,15 @@
+{
+  "eval_id": 4,
+  "eval_name": "tasks-passing-no-review",
+  "prompt": "所有任务都 passing 了，但还没有做 review",
+  "test_project": "test-project-4",
+  "expected_skill": "sdd-task-review",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "调用了 sdd-task-review skill",
+      "passed": null,
+      "evidence": null
+    }
+  ]
+}

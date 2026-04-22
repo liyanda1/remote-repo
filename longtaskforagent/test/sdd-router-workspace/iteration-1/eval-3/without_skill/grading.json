@@ -1,0 +1,14 @@
+{
+  "eval_id": 3,
+  "eval_name": "ar-pending-tasks",
+  "expected_skill": "sdd-task-develop",
+  "without_skill_behavior": "可能直接开始写代码",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "会调用 sdd-task-develop skill",
+      "passed": true,
+      "evidence": "有明确的 pending 任务，agent 可能知道要开发，但无 skill 时缺少 tasks.md 执行依据"
+    }
+  ]
+}

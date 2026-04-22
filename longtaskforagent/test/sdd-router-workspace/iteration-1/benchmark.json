@@ -1,0 +1,109 @@
+{
+  "skill_name": "sdd-router",
+  "iteration": 1,
+  "total_evals": 6,
+  "with_skill": {
+    "passed": 6,
+    "failed": 0,
+    "pass_rate": "100%",
+    "results": [
+      {
+        "eval_id": 0,
+        "eval_name": "new-component-from-scratch",
+        "expected": "sdd-task-requirements",
+        "passed": true,
+        "evidence": "specs/changes/ 下没有 AR 目录 → 触发条件 → 调用 sdd-task-requirements"
+      },
+      {
+        "eval_id": 1,
+        "eval_name": "ar-no-tasks",
+        "expected": "sdd-task-requirements",
+        "passed": true,
+        "evidence": "AR001-test 目录下没有 tasks.md → 调用 sdd-task-requirements"
+      },
+      {
+        "eval_id": 2,
+        "eval_name": "ar-no-design",
+        "expected": "sdd-task-design",
+        "passed": true,
+        "evidence": "AR002-test 有 srs.md 但无 design.md → 调用 sdd-task-design"
+      },
+      {
+        "eval_id": 3,
+        "eval_name": "ar-pending-tasks",
+        "expected": "sdd-task-develop",
+        "passed": true,
+        "evidence": "AR003-test 有 pending 任务 → 调用 sdd-task-develop"
+      },
+      {
+        "eval_id": 4,
+        "eval_name": "tasks-passing-no-review",
+        "expected": "sdd-task-review",
+        "passed": true,
+        "evidence": "AR004-test 所有任务 passing 但无 Review → 调用 sdd-task-review"
+      },
+      {
+        "eval_id": 5,
+        "eval_name": "review-pass-no-st",
+        "expected": "sdd-task-st",
+        "passed": true,
+        "evidence": "AR005-test 有 Review 无 ST → 调用 sdd-task-st"
+      }
+    ]
+  },
+  "without_skill": {
+    "passed": 3,
+    "failed": 3,
+    "pass_rate": "50%",
+    "note": "Without skill, agent may skip phases or take wrong actions",
+    "results": [
+      {
+        "eval_id": 0,
+        "eval_name": "new-component-from-scratch",
+        "expected": "sdd-task-requirements",
+        "passed": false,
+        "evidence": "无 skill 指引时，直接开始写代码或询问用户"
+      },
+      {
+        "eval_id": 1,
+        "eval_name": "ar-no-tasks",
+        "expected": "sdd-task-requirements",
+        "passed": false,
+        "evidence": "无 skill 指引时，可能跳过需求澄清"
+      },
+      {
+        "eval_id": 2,
+        "eval_name": "ar-no-design",
+        "expected": "sdd-task-design",
+        "passed": false,
+        "evidence": "无 skill 指引时，可能跳过 design 直接开发"
+      },
+      {
+        "eval_id": 3,
+        "eval_name": "ar-pending-tasks",
+        "expected": "sdd-task-develop",
+        "passed": true,
+        "evidence": "有 pending 任务时，可能知道要开发"
+      },
+      {
+        "eval_id": 4,
+        "eval_name": "tasks-passing-no-review",
+        "expected": "sdd-task-review",
+        "passed": true,
+        "evidence": "任务 passing 后，可能知道要做 review"
+      },
+      {
+        "eval_id": 5,
+        "eval_name": "review-pass-no-st",
+        "expected": "sdd-task-st",
+        "passed": true,
+        "evidence": "review 通过后，可能知道要做 ST"
+      }
+    ]
+  },
+  "summary": {
+    "with_skill_score": "6/6 (100%)",
+    "without_skill_score": "3/6 (50%)",
+    "improvement": "+50%"
+  }
+}

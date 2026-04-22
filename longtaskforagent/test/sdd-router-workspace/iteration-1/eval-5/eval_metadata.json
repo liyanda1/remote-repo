@@ -1,0 +1,15 @@
+{
+  "eval_id": 5,
+  "eval_name": "review-pass-no-st",
+  "prompt": "review 已通过，ST 还没有做",
+  "test_project": "test-project-5",
+  "expected_skill": "sdd-task-st",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "调用了 sdd-task-st skill",
+      "passed": null,
+      "evidence": null
+    }
+  ]
+}

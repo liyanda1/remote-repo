@@ -1,0 +1,13 @@
+{
+  "eval_id": 1,
+  "eval_name": "ar-no-tasks",
+  "expected_skill": "sdd-task-requirements",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "调用了 sdd-task-requirements skill",
+      "passed": true,
+      "evidence": "AR001-test 目录下没有 tasks.md → 检测规则: tasks.md 不存在 → 调用 sdd-task-requirements"
+    }
+  ]
+}

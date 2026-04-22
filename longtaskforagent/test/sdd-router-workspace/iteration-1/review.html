@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skill Eval Review: sdd-router</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 20px; }
+        .header h1 { font-size: 2rem; margin-bottom: 10px; }
+        .header .subtitle { opacity: 0.9; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab { padding: 12px 24px; background: white; border: none; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 1rem; font-weight: 500; color: #666; transition: all 0.2s; }
+        .tab.active { background: white; color: #667eea; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); }
+        .tab:hover:not(.active) { background: #f0f0f0; }
+        .content { background: white; padding: 30px; border-radius: 0 10px 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .summary-card { background: #f8f9fa; padding: 20px; border-radius: 10px; text-align: center; }
+        .summary-card .label { color: #666; font-size: 0.9rem; margin-bottom: 8px; }
+        .summary-card .value { font-size: 2rem; font-weight: bold; }
+        .summary-card .value.pass { color: #10b981; }
+        .summary-card .value.fail { color: #ef4444; }
+        .summary-card .value.neutral { color: #f59e0b; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e5e5; }
+        th { background: #f8f9fa; font-weight: 600; }
+        tr:hover { background: #f8f9fa; }
+        .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 500; }
+        .status.pass { background: #d1fae5; color: #065f46; }
+        .status.fail { background: #fee2e2; color: #991b1b; }
+        .status.neutral { background: #fef3c7; color: #92400e; }
+        
+        .eval-item { margin-bottom: 20px; padding: 20px; background: #f8f9fa; border-radius: 10px; }
+        .eval-item h3 { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+        .eval-item .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; }
+        .eval-item .badge.skill { background: #dbeafe; color: #1e40af; }
+        .eval-item .prompt { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; font-family: monospace; color: #333; }
+        .eval-item .evidence { background: white; padding: 15px; border-radius: 8px; font-size: 0.9rem; color: #666; }
+        .eval-item .status-row { display: flex; gap: 15px; margin-top: 10px; }
+        
+        .feedback-form { margin-top: 30px; }
+        .feedback-form textarea { width: 100%; padding: 15px; border: 1px solid #e5e5e5; border-radius: 8px; font-size: 1rem; min-height: 100px; resize: vertical; }
+        .feedback-form button { margin-top: 10px; padding: 12px 24px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; }
+        .feedback-form button:hover { background: #5a6fd6; }
+        
+        .footer { text-align: center; margin-top: 30px; color: #999; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Skill Eval Review: sdd-router</h1>
+            <div class="subtitle">Iteration 1 • 6 test cases • Generated: 2026-04-22</div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('outputs')">Outputs</button>
+            <button class="tab" onclick="showTab('benchmark')">Benchmark</button>
+            <button class="tab" onclick="showTab('feedback')">Feedback</button>
+        </div>
+        
+        <div class="content">
+            <div id="outputs" class="tab-content active">
+                <h2>Test Case Outputs</h2>
+                
+                <div class="eval-item">
+                    <h3>Eval 0: new-component-from-scratch <span class="badge skill">sdd-task-requirements</span></h3>
+                    <div class="prompt"><strong>Prompt:</strong> 新建一个组件工程，需要从零开始开发</div>
+                    <div class="status-row">
+                        <span class="status pass">With Skill: PASS</span>
+                        <span class="status fail">Without Skill: FAIL</span>
+                    </div>
+                    <div class="evidence"><strong>Evidence:</strong> specs/changes/ 下没有 AR 目录 → 触发 '无 AR 目录，或 srs.md / tasks.md 缺失' 条件 → 调用 sdd-task-requirements</div>
+                </div>
+                
+                <div class="eval-item">
+                    <h3>Eval 1: ar-no-tasks <span class="badge skill">sdd-task-requirements</span></h3>
+                    <div class="prompt"><strong>Prompt:</strong> specs/changes/ 目录下有一个 AR001 但没有 tasks.md</div>
+                    <div class="status-row">
+                        <span class="status pass">With Skill: PASS</span>
+                        <span class="status fail">Without Skill: FAIL</span>
+                    </div>
+                    <div class="evidence"><strong>Evidence:</strong> AR001-test 目录下没有 tasks.md → 检测规则: tasks.md 不存在 → 调用 sdd-task-requirements</div>
+                </div>
+                
+                <div class="eval-item">
+                    <h3>Eval 2: ar-no-design <span class="badge skill">sdd-task-design</span></h3>
+                    <div class="prompt"><strong>Prompt:</strong> 当前 AR 有 srs.md 但没有 design.md</div>
+                    <div class="status-row">
+                        <span class="status pass">With Skill: PASS</span>
+                        <span class="status fail">Without Skill: FAIL</span>
+                    </div>
+                    <div class="evidence"><strong>Evidence:</strong> AR002-test 有 srs.md 但无 design.md → 检测规则: srs.md 存在，design.md 不存在 → 调用 sdd-task-design</div>
+                </div>
+                
+                <div class="eval-item">
+                    <h3>Eval 3: ar-pending-tasks <span class="badge skill">sdd-task-develop</span></h3>
+                    <div class="prompt"><strong>Prompt:</strong> design.md 已存在，tasks.md 中有 pending 任务</div>
+                    <div class="status-row">
+                        <span class="status pass">With Skill: PASS</span>
+                        <span class="status neutral">Without Skill: PASS (偶然)</span>
+                    </div>
+                    <div class="evidence"><strong>Evidence:</strong> AR003-test 有 design.md 且 tasks.md 有 pending 任务 → 检测规则: 存在 pending 任务 → 调用 sdd-task-develop</div>
+                </div>
+                
+                <div class="eval-item">
+                    <h3>Eval 4: tasks-passing-no-review <span class="badge skill">sdd-task-review</span></h3>
+                    <div class="prompt"><strong>Prompt:</strong> 所有任务都 passing 了，但还没有做 review</div>
+                    <div class="status-row">
+                        <span class="status pass">With Skill: PASS</span>
+                        <span class="status neutral">Without Skill: PASS (偶然)</span>
+                    </div>
+                    <div class="evidence"><strong>Evidence:</strong> AR004-test 所有任务 passing 但无 Review 通过记录 → 检测规则: 所有任务 passing，review 未完成 → 调用 sdd-task-review</div>
+                </div>
+                
+                <div class="eval-item">
+                    <h3>Eval 5: review-pass-no-st <span class="badge skill">sdd-task-st</span></h3>
+                    <div class="prompt"><strong>Prompt:</strong> review 已通过，ST 还没有做</div>
+                    <div class="status-row">
+                        <span class="status pass">With Skill: PASS</span>
+                        <span class="status neutral">Without Skill: PASS (偶然)</span>
+                    </div>
+                    <div class="evidence"><strong>Evidence:</strong> AR005-test 有 Review 通过记录但无 ST 通过记录 → 检测规则: Review 已 PASS，ST 未完成 → 调用 sdd-task-st</div>
+                </div>
+            </div>
+            
+            <div id="benchmark" class="tab-content">
+                <h2>Benchmark Results</h2>
+                
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="label">With Skill</div>
+                        <div class="value pass">6/6</div>
+                        <div class="label">100%</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Without Skill</div>
+                        <div class="value fail">3/6</div>
+                        <div class="label">50%</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Improvement</div>
+                        <div class="value neutral">+50%</div>
+                        <div class="label">absolute</div>
+                    </div>
+                </div>
+                
+                <h3>With Skill (sdd-router)</h3>
+                <table>
+                    <thead>
+                        <tr><th>Eval</th><th>Scenario</th><th>Expected</th><th>Result</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>0</td><td>新建组件工程</td><td>sdd-task-requirements</td><td><span class="status pass">PASS</span></td></tr>
+                        <tr><td>1</td><td>AR 无 tasks.md</td><td>sdd-task-requirements</td><td><span class="status pass">PASS</span></td></tr>
+                        <tr><td>2</td><td>有 srs.md 无 design</td><td>sdd-task-design</td><td><span class="status pass">PASS</span></td></tr>
+                        <tr><td>3</td><td>pending 任务</td><td>sdd-task-develop</td><td><span class="status pass">PASS</span></td></tr>
+                        <tr><td>4</td><td>任务 passing</td><td>sdd-task-review</td><td><span class="status pass">PASS</span></td></tr>
+                        <tr><td>5</td><td>review 通过</td><td>sdd-task-st</td><td><span class="status pass">PASS</span></td></tr>
+                    </tbody>
+                </table>
+                
+                <h3>Without Skill</h3>
+                <table>
+                    <thead>
+                        <tr><th>Eval</th><th>Scenario</th><th>Expected</th><th>Result</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>0</td><td>新建组件工程</td><td>询问用户</td><td><span class="status fail">FAIL</span></td></tr>
+                        <tr><td>1</td><td>AR 无 tasks.md</td><td>澄清需求</td><td><span class="status fail">FAIL</span></td></tr>
+                        <tr><td>2</td><td>有 srs.md 无 design</td><td>生成设计</td><td><span class="status fail">FAIL</span></td></tr>
+                        <tr><td>3</td><td>pending 任务</td><td>开发</td><td><span class="status pass">PASS</span></td></tr>
+                        <tr><td>4</td><td>任务 passing</td><td>review</td><td><span class="status pass">PASS</span></td></tr>
+                        <tr><td>5</td><td>review 通过</td><td>ST</td><td><span class="status pass">PASS</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div id="feedback" class="tab-content">
+                <h2>Feedback</h2>
+                <p style="margin-bottom: 20px; color: #666;">请对你的评估结果提供反馈:</p>
+                
+                <div class="feedback-form">
+                    <textarea id="feedbackText" placeholder="输入你的反馈..."></textarea>
+                    <button onclick="saveFeedback()">保存反馈</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            Generated by skill-creator • sdd-router eval iteration 1
+        </div>
+    </div>
+    
+    <script>
+        function showTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+        
+        function saveFeedback() {
+            const feedback = document.getElementById('feedbackText').value;
+            const blob = new Blob([JSON.stringify({feedback: feedback, timestamp: new Date().toISOString()}, null, 2)], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'feedback.json';
+            a.click();
+            alert('反馈已保存到 feedback.json');
+        }
+    </script>
+</body>
+</html>

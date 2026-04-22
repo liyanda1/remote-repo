@@ -1,0 +1,15 @@
+{
+  "eval_id": 0,
+  "eval_name": "new-component-from-scratch",
+  "prompt": "新建一个组件工程，需要从零开始开发",
+  "test_project": "test-project-0",
+  "expected_skill": "sdd-task-requirements",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "调用了 sdd-task-requirements skill",
+      "passed": null,
+      "evidence": null
+    }
+  ]
+}

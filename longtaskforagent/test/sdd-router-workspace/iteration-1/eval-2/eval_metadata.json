@@ -1,0 +1,15 @@
+{
+  "eval_id": 2,
+  "eval_name": "ar-no-design",
+  "prompt": "当前 AR 有 srs.md 但没有 design.md",
+  "test_project": "test-project-2",
+  "expected_skill": "sdd-task-design",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "调用了 sdd-task-design skill",
+      "passed": null,
+      "evidence": null
+    }
+  ]
+}

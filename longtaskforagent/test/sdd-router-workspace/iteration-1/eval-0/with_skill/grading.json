@@ -1,0 +1,13 @@
+{
+  "eval_id": 0,
+  "eval_name": "new-component-from-scratch",
+  "expected_skill": "sdd-task-requirements",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "调用了 sdd-task-requirements skill",
+      "passed": true,
+      "evidence": "specs/changes/ 下没有 AR 目录 → 触发 '无 AR 目录，或 srs.md / tasks.md 缺失' 条件 → 调用 sdd-task-requirements"
+    }
+  ]
+}

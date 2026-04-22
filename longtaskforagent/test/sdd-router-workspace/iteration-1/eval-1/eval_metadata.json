@@ -1,0 +1,15 @@
+{
+  "eval_id": 1,
+  "eval_name": "ar-no-tasks",
+  "prompt": "specs/changes/ 目录下有一个 AR001 但没有 tasks.md",
+  "test_project": "test-project-1",
+  "expected_skill": "sdd-task-requirements",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "调用了 sdd-task-requirements skill",
+      "passed": null,
+      "evidence": null
+    }
+  ]
+}

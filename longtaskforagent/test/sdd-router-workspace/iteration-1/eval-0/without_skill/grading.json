@@ -1,0 +1,14 @@
+{
+  "eval_id": 0,
+  "eval_name": "new-component-from-scratch",
+  "expected_skill": "sdd-task-requirements",
+  "without_skill_behavior": "直接开始写代码或询问用户具体需求",
+  "assertions": [
+    {
+      "id": "a1",
+      "text": "不会调用任何阶段 skill",
+      "passed": false,
+      "evidence": "无 skill 指引时，agent 会直接询问或自行判断下一步"
+    }
+  ]
+}
