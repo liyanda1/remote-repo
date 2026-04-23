@@ -187,16 +187,19 @@ For each test case:
    - **Creating a new skill**: accomplish the same task without the skill. Save to `without_skill/outputs/`.
    - **Improving an existing skill**: snapshot the old skill first (`cp -r <skill-path> <workspace>/skill-snapshot/`), then accomplish the task with the old skill. Save to `old_skill/outputs/`.
 
-Write an `eval_metadata.json` for each test case:
+Write an `eval_metadata.json` for each test case in the `eval-<ID>/` root directory (NOT inside `with_skill/` or `without_skill/`). Copy the `prompt` **verbatim** from `evals.json` — do not truncate, summarize, or leave it empty. The `generate_review.py` viewer reads `prompt` from this file to display in the HTML report.
 
 ```json
 {
   "eval_id": 0,
   "eval_name": "descriptive-name-here",
-  "prompt": "The user's task prompt",
+  "prompt": "Copy the FULL prompt text from evals.json here — never leave this empty",
+  "expected_output": "Description of expected result",
   "assertions": []
 }
 ```
+
+> **Common mistake**: Using `sed` or `jq` to extract prompt from evals.json and getting an empty string. Instead, read evals.json with a file reader, copy the prompt field directly, then write eval_metadata.json.
 
 ### Step 2: Draft assertions
 

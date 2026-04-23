@@ -87,7 +87,7 @@ Tracks version progression in Improve mode. Located at workspace root.
 
 ## grading.json
 
-Output from the grader agent. Located at `<run-dir>/grading.json`.
+Output from the grader agent. Located at `<outputs_dir>/grading.json` (e.g. `eval-0/with_skill/outputs/grading.json`).
 
 ```json
 {
