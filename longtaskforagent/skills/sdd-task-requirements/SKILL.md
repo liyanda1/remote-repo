@@ -315,6 +315,6 @@ specs/changes/ARxxx-topic/tasks.md    ← 任务跟踪文件
 
 ## 集成说明
 
-**调用方：** sdd-router（当 srs.md 或 tasks.md 缺失时）
+**调用方：** sdd-router（当 srs.md 或 tasks.md 缺失时）；sdd-task-develop（开发途中发现需求问题，用户确认后）
 **链接到：** sdd-task-design（Step 8，需求确认后）
 **产出：** `specs/changes/ARxxx-topic/srs.md`、`specs/changes/ARxxx-topic/tasks.md`

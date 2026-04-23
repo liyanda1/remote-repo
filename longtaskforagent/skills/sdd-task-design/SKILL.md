@@ -1,17 +1,23 @@
 ---
 name: sdd-task-design
-description: "Use when srs.md exists but design.md does not - read component context and srs.md, produce design.md for the AR following department template"
+description: "Use when srs.md exists and design.md needs to be created or modified - read component context and srs.md, produce or update design.md for the AR following department template"
 ---
 
-# SDD AR 详细设计 — 生成 design.md
+# SDD AR 详细设计 — 生成或修改 design.md
 
-基于已批准的 srs.md 和组件领域知识，生成符合部门规范的 AR 详细设计文档（design.md）。
+基于已批准的 srs.md 和组件领域知识，生成或修改符合部门规范的 AR 详细设计文档（design.md）。
+
+**两种入口模式：**
+- **首次设计**（design.md 不存在）：从头生成 design.md
+- **返工修改**（design.md 已存在，开发中途发现设计问题）：在现有 design.md 基础上定向修改
 
 <HARD-GATE>
-在 design.md 未生成并得到用户确认之前，不得调用开发 skill，不得编写任何代码。
+在 design.md 未生成/修改并得到用户确认之前，不得调用开发 skill，不得编写任何代码。
 </HARD-GATE>
 
 ## Checklist
+
+### 首次设计模式（design.md 不存在）
 
 你必须为以下每个步骤创建 TodoWrite 任务，并按顺序完成：
 
@@ -23,6 +29,17 @@ description: "Use when srs.md exists but design.md does not - read component con
 6. **更新 tasks.md** — 确认任务分解与设计一致
 7. **刷新组件详细设计** — 分析 AR 对组件详设的影响，按需更新组件_spec.md
 8. **移交开发阶段** — 调用 `sdd-router:sdd-task-develop`
+
+### 返工修改模式（design.md 已存在，开发中途发现问题）
+
+> 由 `sdd-task-develop` 在遇到设计问题时发起，用户确认后触发。
+
+1. **读取现有 design.md** — 理解当前设计的完整内容
+2. **确认返工范围** — 与用户确认要修改哪些章节/接口/算法，以及修改原因
+3. **定向修改设计** — 只修改受影响的章节，其余保持不变
+4. **重置受影响任务** — 将 tasks.md 中因设计变更需要重做的任务状态重置为 `pending`；已完成的无关任务保持 `passing`
+5. **刷新组件详细设计** — 按 Step 7 规则判断组件详设是否需要同步更新
+6. **移交开发阶段** — 调用 `sdd-router:sdd-task-develop`
 
 **终态是调用 sdd-task-develop。** 不要调用其他 skill。
 
@@ -351,7 +368,7 @@ design.md、tasks.md 和组件详设（如有更新）保存完成后：
 
 ## 集成说明
 
-**调用方：** sdd-router（srs.md 存在，design.md 缺失时）
+**调用方：** sdd-router（srs.md 存在，design.md 缺失时）；sdd-task-develop（开发途中发现设计问题，用户确认后）
 **链接到：** sdd-task-develop（Step 8，设计确认后）
 **产出：** `specs/changes/ARxxx-topic/design.md`（更新 `tasks.md`）；如有接口/架构变化，同步更新 `specs/component-detail-design/组件_spec.md`
 **读取：** `specs/component-detail-design/组件_spec.md`、`specs/changes/ARxxx-topic/srs.md`、`include/`、`src/`
