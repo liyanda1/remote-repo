@@ -94,6 +94,8 @@ description: "Use when srs.md exists and design.md needs to be created or modifi
 
 如果存在未解决的设计 Open Questions（影响架构选择），通过 AskUserQuestion 在进入 Step 3 之前解决。
 
+> **暂停点：** 用户回答完 Open Questions 后，Agent 不得直接进入 Step 3。须输出"设计输入分析摘要"（功能点清单 + 约束 + Open Questions 结论），并询问：**"以上分析是否完整？还有补充吗？"** 只有用户确认后才进入 Step 3。
+
 ---
 
 ## Step 3：提案设计方案
@@ -196,7 +198,8 @@ design.md 草稿生成后，请用户**在渲染后的文档中**逐节审阅，
 
 **修改循环：**
 - 用户提出修改意见 → Agent 直接修改 design.md 对应章节 → 用户再次确认
-- 重复直至用户批准所有节
+- 用户只是提问（"这里为什么这样设计"等） → Agent 回答后继续等待确认，**不得自动进入 Step 6**
+- 重复直至用户明确批准所有节
 
 等待用户明确批准（"确认"/"OK"/"没问题"）后继续 Step 6。
 
