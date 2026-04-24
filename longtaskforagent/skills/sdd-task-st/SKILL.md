@@ -217,7 +217,7 @@ description: "Use when review has passed - run ST acceptance testing for the AR,
 - 需求覆盖率不足 100%
 - 存在回归
 
-等待用户确认 Go 或 No-Go 后继续。
+通过 **AskUserQuestion** 让用户确认判定结果（选项：Go / Conditional-Go / No-Go / 其他（自行补充））。用户也可在对话中直接输入自定义内容，Agent 正常接受。
 
 ---
 

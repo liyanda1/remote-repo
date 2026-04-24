@@ -119,7 +119,7 @@ description: "Use when srs.md exists and design.md needs to be created or modifi
 
 对于简单 AR（仅修改单个函数/模块，无架构影响），可合并为单一方案描述。
 
-等待用户确认选择的方案后继续。
+通过 **AskUserQuestion** 让用户选择方案（单选，选项为各方案名称 + "其他（自行补充）"）。用户也可在对话中直接输入自定义内容，Agent 正常接受。
 
 ---
 
