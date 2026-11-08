@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "strata": {
+      "_说明": "多人共用：连团队服务端。如果只在本机用，把这一段换成 { type: local, command: [python, <strata路径>/strata.py, serve], enabled: true }",
+      "type": "remote",
+      "url": "http://<服务机IP>:8760/mcp",
+      "headers": { "Authorization": "Bearer <组内口令>" },
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strata 架构 · 用 OpenCode 构建与查询代码知识库</title>
+<style>
+  :root{
+    --ink:#1e293b; --ink-2:#475569; --ink-3:#64748b; --line:#e2e8f0;
+    --bg:#f6f7f9; --card:#ffffff;
+    --intent:#6d28d9; --intent-bg:#f5f3ff;
+    --mech:#0e7490;   --mech-bg:#ecfeff;
+    --ver:#b45309;    --ver-bg:#fffbeb;
+    --impl:#1d4ed8;   --impl-bg:#eff6ff;
+    --ok:#047857;     --ok-bg:#ecfdf5;
+    --mid:#b45309;    --mid-bg:#fffbeb;
+    --gray:#64748b;   --gray-bg:#f1f5f9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.78 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;background:var(--card);padding:56px 56px 104px;
+        box-shadow:0 1px 3px rgba(15,23,42,.06),0 12px 40px rgba(15,23,42,.05)}
+  @media (max-width:820px){ .wrap{padding:28px 20px 64px} }
+
+  h1{font-size:32px;line-height:1.3;margin:0 0 10px;letter-spacing:-.5px;font-weight:700}
+  h2{font-size:21px;margin:58px 0 16px;padding-left:13px;border-left:4px solid var(--impl);
+     line-height:1.4;font-weight:650;letter-spacing:-.2px}
+  h3{font-size:16.5px;margin:32px 0 10px;font-weight:650}
+  h4{font-size:14.5px;margin:22px 0 8px;font-weight:650;color:var(--ink-2)}
+  p{margin:10px 0}
+  a{color:var(--impl);text-decoration:none;border-bottom:1px solid #c7d2fe}
+  .sub{color:var(--ink-3);font-size:14.5px;margin:0 0 4px}
+  .meta{color:#94a3b8;font-size:12.5px;letter-spacing:.2px;margin-top:14px}
+  .hero{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:8px}
+  .kicker{display:inline-block;font-size:11.5px;letter-spacing:1.6px;text-transform:uppercase;
+          color:var(--impl);background:var(--impl-bg);border-radius:4px;padding:3px 9px;
+          margin-bottom:16px;font-weight:600}
+  .lead{font-size:16.5px;color:var(--ink-2);line-height:1.75}
+
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px;line-height:1.65}
+  th{background:#f8fafc;text-align:left;font-weight:650;color:var(--ink-2);
+     border:1px solid var(--line);padding:8px 11px;vertical-align:top}
+  td{border:1px solid var(--line);padding:8px 11px;vertical-align:top}
+  tbody tr:nth-child(even){background:#fcfdfe}
+  td code,th code{background:#f1f5f9;border-radius:3px;padding:1px 5px;font-size:12.5px}
+
+  code{font-family:Consolas,"Cascadia Mono","SFMono-Regular",Menlo,monospace;
+       background:#f1f5f9;padding:1.5px 5px;border-radius:3px;font-size:13px;color:#0f172a}
+  pre{background:#f8fafc;border:1px solid var(--line);border-left:3px solid #94a3b8;
+      border-radius:6px;padding:14px 16px;overflow-x:auto;margin:14px 0;font-size:12.8px;line-height:1.62}
+  pre code{background:none;padding:0;font-size:12.8px}
+  .c-com{color:#94a3b8}
+  .c-key{color:var(--impl)}
+  .c-str{color:#047857}
+  .c-ok{color:var(--ok)}
+
+  .fig{margin:26px 0;background:#fbfcfd;border:1px solid #e8edf3;border-radius:10px;
+       padding:20px 20px 14px;overflow-x:auto}
+  .fig svg{display:block;margin:0 auto;max-width:100%;height:auto}
+  .figcap{font-size:12.5px;color:var(--ink-3);margin-top:12px;text-align:center;line-height:1.6}
+  .figcap b{color:var(--ink-2);font-weight:600}
+
+  .callout{border-left:3px solid var(--line);background:#fafbfc;padding:12px 16px;
+           border-radius:0 6px 6px 0;margin:16px 0;font-size:14px;color:var(--ink-2)}
+  .callout.key{border-left-color:var(--impl);background:var(--impl-bg)}
+  .callout.warn{border-left-color:#d97706;background:#fffdf5}
+  .callout.ok{border-left-color:var(--ok);background:var(--ok-bg)}
+  .callout .t{display:block;font-weight:650;color:var(--ink);margin-bottom:4px;font-size:13.5px}
+
+  .tag{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:20px;
+       font-weight:600;letter-spacing:.2px;vertical-align:1px}
+  .t-certain{background:var(--ok-bg);color:var(--ok)}
+  .t-likely{background:var(--mid-bg);color:var(--mid)}
+  .t-possible{background:var(--gray-bg);color:var(--gray)}
+  .t-skill{background:#f5f3ff;color:#6d28d9}
+  .t-cmd{background:#eff6ff;color:#1d4ed8}
+  .t-mcp{background:#ecfeff;color:#0e7490}
+
+  ul,ol{margin:10px 0;padding-left:24px}
+  li{margin:5px 0}
+  .tight li{margin:2px 0}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  @media (max-width:760px){ .grid2{grid-template-columns:1fr} }
+  .box{border:1px solid var(--line);border-radius:8px;padding:14px 16px;font-size:13.5px}
+  .box .h{font-weight:650;margin-bottom:6px;font-size:13.5px}
+  .box.no{background:#fffafa;border-color:#f3d9d9}
+  .box.yes{background:#f7fdfa;border-color:#cfe9dd}
+
+  .stepno{display:inline-block;background:var(--impl);color:#fff;font-size:12px;font-weight:700;
+          border-radius:5px;padding:2px 9px;margin-right:8px;letter-spacing:.4px}
+  footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);
+         color:#94a3b8;font-size:12.5px}
+  ::selection{background:#dbeafe}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <span class="kicker">Architecture</span>
+  <h1>Strata</h1>
+  <p class="sub">用 OpenCode 构建并查询代码知识库：<b>场景 → 功能 → IT/UT → 代码</b></p>
+  <p class="meta">v0.2 · 2026-11 · 在 fmtlib/fmt（73 文件 / 70760 行）上完成端到端验证</p>
+</div>
+
+<h2>0 · 这是什么形态的产物</h2>
+
+<p class="lead">
+它不是 agent，是<b>一套工程</b>：四个部件各管一件事，由一个 Python 工具链串起来。
+你可以只装其中一部分——只查不建，就只连一个 MCP 服务端的地址，不装任何脚本。
+</p>
+
+<div class="fig">
+<svg viewBox="0 0 900 330" width="900" height="330" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="f1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="f1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
+    </marker>
+  </defs>
+
+  <!-- OpenCode -->
+  <rect x="150" y="16" width="600" height="48" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.4"/>
+  <text x="450" y="46" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">
+    OpenCode · 你在这里工作
+  </text>
+
+  <!-- 三个部件 -->
+  <rect x="60" y="98" width="220" height="78" rx="8" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="170" y="124" text-anchor="middle" font-size="13.5" font-weight="700" fill="#6d28d9">Skill</text>
+  <text x="170" y="145" text-anchor="middle" font-size="11" fill="#7c6ba8">构建流程写死在这里</text>
+  <text x="170" y="164" text-anchor="middle" font-size="10.5" font-family="Consolas,monospace" fill="#8b7fb8">SKILL.md</text>
+
+  <rect x="300" y="98" width="220" height="78" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="410" y="124" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1d4ed8">Commands</text>
+  <text x="410" y="145" text-anchor="middle" font-size="11" fill="#4b6bb5">一条命令跑完一步</text>
+  <text x="410" y="164" text-anchor="middle" font-size="10.5" font-family="Consolas,monospace" fill="#6b85c0">7 个 /strata-*</text>
+
+  <rect x="560" y="98" width="280" height="78" rx="8" fill="#ecfeff" stroke="#a5e4ee" stroke-width="1.5"/>
+  <text x="700" y="124" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0e7490">MCP Server</text>
+  <text x="700" y="145" text-anchor="middle" font-size="11" fill="#3f7f8f">常驻服务，全组远端连</text>
+  <text x="700" y="164" text-anchor="middle" font-size="10.5" font-family="Consolas,monospace" fill="#5f95a3">6 个工具 · stdio / HTTP</text>
+
+  <line x1="250" y1="64" x2="190" y2="94" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#f1a)"/>
+  <line x1="450" y1="64" x2="420" y2="94" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#f1a)"/>
+  <line x1="650" y1="64" x2="680" y2="94" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#f1a)"/>
+
+  <!-- 数据层 -->
+  <rect x="60" y="212" width="360" height="72" rx="8" fill="#faf9ff" stroke="#ddd6fe" stroke-width="1.4"/>
+  <text x="80" y="238" font-size="12.5" font-weight="700" fill="#6d28d9">cards/ 事实源</text>
+  <text x="80" y="258" font-size="11" fill="#7c6ba8">Markdown + frontmatter，进 Git、可 review、可 diff</text>
+  <text x="80" y="274" font-size="10.5" fill="#a78bfa">删掉索引能重建，删掉卡片就真没了</text>
+
+  <rect x="480" y="212" width="360" height="72" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.4"/>
+  <text x="500" y="238" font-size="12.5" font-weight="700" fill="#475569">index.sqlite 派生物</text>
+  <text x="500" y="258" font-size="11" fill="#64748b">节点 / 边 / 证据三张表，递归 CTE 做多跳</text>
+  <text x="500" y="274" font-size="10.5" fill="#94a3b8">不进 Git，随时可删可重建</text>
+
+  <line x1="424" y1="248" x2="476" y2="248" stroke="#1d4ed8" stroke-width="1.8" marker-end="url(#f1b)"/>
+  <text x="450" y="240" text-anchor="middle" font-size="10" fill="#1d4ed8" font-weight="600">compile</text>
+
+  <line x1="170" y1="178" x2="170" y2="208" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#f1a)"/>
+  <line x1="410" y1="178" x2="410" y2="208" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#f1a)"/>
+  <line x1="700" y1="178" x2="700" y2="208" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#f1a)"
+        stroke-dasharray="5 4"/>
+  <text x="712" y="198" font-size="10" fill="#94a3b8">只读</text>
+
+  <text x="450" y="314" text-anchor="middle" font-size="11.5" fill="#94a3b8">
+    建库的人装前三个；只查库的人连一下服务端 URL 就够了
+  </text>
+</svg>
+<div class="figcap"><b>图 1</b>　四个部件：skill 管流程，command 管触发，MCP 管取数，卡片与索引是数据</div>
+</div>
+
+<table>
+  <thead><tr><th style="width:112px">部件</th><th style="width:78px">形态</th><th>职责</th><th style="width:180px">放在哪</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>Skill</b><br><span class="tag t-skill">skill</span></td>
+      <td><code>SKILL.md</code></td>
+      <td>构建知识库的完整工作流。模型加载后知道：先自检、再抽取、怎么编译、怎么写卡片、
+          什么情况必须停下来问人。</td>
+      <td><code>.opencode/skills/strata/</code></td>
+    </tr>
+    <tr>
+      <td><b>Commands</b><br><span class="tag t-cmd">command</span></td>
+      <td><code>*.md</code></td>
+      <td>七个斜杠命令，其中 <code>/strata-build</code> 一条走完整条建库链。
+          每个命令里嵌了 shell 块，敲命令时脚本先跑，输出直接进模型上下文——
+          <b>你不需要手动敲 python</b>。</td>
+      <td><code>.opencode/commands/</code></td>
+    </tr>
+    <tr>
+      <td><b>MCP Server</b><br><span class="tag t-mcp">mcp</span></td>
+      <td>stdio / HTTP</td>
+      <td>查询层，六个语义化工具 + 一个全景图页面。可以 stdio 本机拉起，也可以 HTTP 常驻让全组远端连——
+          <b>一份索引一个服务端</b>，浏览器开服务地址就能直接看图。</td>
+      <td><code>strata.py serve</code></td>
+    </tr>
+    <tr>
+      <td><b>数据</b></td>
+      <td>Markdown + SQLite</td>
+      <td>卡片是事实源（进 Git、可 review），索引是派生物（可删可重建）。</td>
+      <td><code>cards/</code> + <code>index.sqlite</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>为什么不做成 agent</h3>
+
+<p>
+agent 有自己的推理循环，会自己决定下一步做什么——这在建知识库时恰恰是风险：
+它会自由发挥、跳跃步骤、把「可能」写成「确定」。这里需要的是相反的属性。
+</p>
+
+<table>
+  <thead><tr><th style="width:130px">需求</th><th>agent 的问题</th><th>本方案的对应物</th></tr></thead>
+  <tbody>
+    <tr><td>流程必须固定</td><td>agent 可能跳过编译直接下结论</td><td><b>skill</b> 把步骤写死，每步有验收</td></tr>
+    <tr><td>证据必须可查</td><td>agent 会说「我记得」</td><td><b>MCP 工具</b>返回带 provenance 的边</td></tr>
+    <tr><td>越权必须不可能</td><td>靠 prompt 约束，能绕</td><td><b>status 闸门</b>：模型写不进 <code>confirmed</code></td></tr>
+    <tr><td>操作要省事</td><td>要对话几十轮</td><td><b>command</b> 一条命令跑完一串脚本</td></tr>
+  </tbody>
+</table>
+
+<div class="callout key">
+  <span class="t">一句话分工</span>
+  <b>skill 管流程</b>（先做什么后做什么）、<b>command 管触发</b>（一条命令跑完一步）、
+  <b>MCP 管取数</b>（结论从库里查，不靠记忆）、<b>模型只做语义判断</b>（这段代码属于哪个功能点、
+  这个用例验证的是哪个场景）。凡是能算的，一律不给模型留发挥空间。
+</div>
+
+<h2>1 · 架构</h2>
+
+<h3>1.1 运行时组件</h3>
+
+<div class="fig">
+<svg viewBox="0 0 900 402" width="900" height="402" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="f2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="f2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
+    </marker>
+  </defs>
+
+  <!-- 交互层 -->
+  <text x="24" y="52" font-size="11.5" font-weight="700" fill="#64748b">交互层</text>
+  <rect x="110" y="18" width="770" height="68" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.3"/>
+  <rect x="126" y="32" width="330" height="40" rx="6" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="291" y="50" text-anchor="middle" font-size="12" font-weight="650" fill="#1d4ed8">斜杠命令</text>
+  <text x="291" y="65" text-anchor="middle" font-size="10" fill="#6b85c0">/strata-init · impact · fill · review …</text>
+  <rect x="490" y="32" width="374" height="40" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+  <text x="677" y="50" text-anchor="middle" font-size="12" font-weight="650" fill="#6d28d9">对话 / skill 加载</text>
+  <text x="677" y="65" text-anchor="middle" font-size="10" fill="#8b7fb8">模型按 SKILL.md 的流程走，按需读 references/</text>
+
+  <line x1="300" y1="86" x2="300" y2="106" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#f2a)"/>
+
+  <!-- 执行层 -->
+  <text x="24" y="142" font-size="11.5" font-weight="700" fill="#64748b">执行层</text>
+  <rect x="110" y="108" width="770" height="66" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.3"/>
+  <text x="126" y="126" font-size="10.5" font-family="Consolas,monospace" fill="#64748b">strata-run.py</text>
+  <rect x="126" y="134" width="172" height="30" rx="5" fill="#fff" stroke="#cbd5e1"/>
+  <text x="212" y="154" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#334155">extract</text>
+  <rect x="310" y="134" width="172" height="30" rx="5" fill="#fff" stroke="#cbd5e1"/>
+  <text x="396" y="154" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#334155">compile</text>
+  <rect x="494" y="134" width="172" height="30" rx="5" fill="#fff" stroke="#cbd5e1"/>
+  <text x="580" y="154" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#334155">impact-diff</text>
+  <rect x="678" y="134" width="186" height="30" rx="5" fill="#fff" stroke="#cbd5e1"/>
+  <text x="771" y="154" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#334155">holes / drafts</text>
+
+  <line x1="300" y1="174" x2="300" y2="196" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#f2a)"/>
+
+  <!-- 数据层 -->
+  <text x="24" y="234" font-size="11.5" font-weight="700" fill="#64748b">数据层</text>
+  <rect x="110" y="198" width="330" height="74" rx="8" fill="#faf9ff" stroke="#ddd6fe" stroke-width="1.3"/>
+  <text x="126" y="220" font-size="12" font-weight="700" fill="#6d28d9">cards/</text>
+  <text x="126" y="240" font-size="10.5" fill="#7c6ba8">Markdown 卡片 · 事实源</text>
+  <text x="126" y="258" font-size="10.5" fill="#a78bfa">进 Git，能 review，能 diff</text>
+
+  <line x1="444" y1="235" x2="496" y2="235" stroke="#1d4ed8" stroke-width="1.7" marker-end="url(#f2b)"/>
+  <text x="470" y="228" text-anchor="middle" font-size="9.5" fill="#1d4ed8" font-weight="600">compile</text>
+
+  <rect x="500" y="198" width="380" height="74" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.3"/>
+  <text x="516" y="220" font-size="12" font-weight="700" fill="#475569">index.sqlite</text>
+  <text x="516" y="240" font-size="10.5" fill="#64748b">node / edge / gap 三张表</text>
+  <text x="516" y="258" font-size="10.5" fill="#94a3b8">派生物，删了能重建</text>
+
+  <line x1="690" y1="272" x2="690" y2="292" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#f2a)"/>
+  <text x="700" y="288" font-size="10" fill="#94a3b8">只读</text>
+
+  <!-- 查询层 -->
+  <text x="24" y="332" font-size="11.5" font-weight="700" fill="#64748b">查询层</text>
+  <rect x="110" y="296" width="770" height="66" rx="8" fill="#ecfeff" stroke="#a5e4ee" stroke-width="1.3"/>
+  <text x="126" y="318" font-size="12" font-weight="700" fill="#0e7490">MCP · 6 个语义化工具</text>
+  <text x="126" y="338" font-size="10.5" font-family="Consolas,monospace" fill="#3f7f8f">
+    impact_of_change　coverage_of_intent　find_holes
+  </text>
+  <text x="126" y="354" font-size="10.5" font-family="Consolas,monospace" fill="#3f7f8f">
+    explain_edge　graph_stats　log_gap
+  </text>
+  <text x="866" y="338" text-anchor="end" font-size="10" fill="#5f95a3">不暴露裸图查询</text>
+
+  <text x="450" y="388" text-anchor="middle" font-size="11.5" fill="#94a3b8">
+    模型不直接读索引文件——它只能通过这六个工具取数，因此结论一定带证据和档位
+  </text>
+</svg>
+<div class="figcap"><b>图 2</b>　运行时四层：命令触发脚本，脚本读写数据，MCP 只读索引对外提供服务</div>
+</div>
+
+<p>
+三条数据流，方向都不同，不要混：
+</p>
+
+<table>
+  <thead><tr><th style="width:100px">流向</th><th>路径</th><th>触发方式</th><th>产出</th></tr></thead>
+  <tbody>
+    <tr><td><b>建</b></td><td>代码仓 → 抽取器 → 卡片 → 编译器 → 索引</td><td><code>/strata-init</code>、<code>/strata-extract</code></td><td>卡片与索引</td></tr>
+    <tr><td><b>查</b></td><td>问题 → MCP 工具 → 索引 → 分档结论</td><td>对话中自动调用，或 <code>/strata-impact</code></td><td>带证据的回答</td></tr>
+    <tr><td><b>补</b></td><td>空洞 → 提问 → 用户回答 → 改卡片 → 重新编译</td><td><code>/strata-fill</code></td><td>更完整的图</td></tr>
+  </tbody>
+</table>
+
+<h3>1.2 分层与目录</h3>
+
+<table>
+  <thead><tr><th style="width:120px">层</th><th>放什么</th><th>谁能改</th><th>改它的代价</th></tr></thead>
+  <tbody>
+    <tr><td><code>core/</code> 内核</td><td>元模型、编译器、查询、MCP</td><td>框架维护者，需评审</td><td>影响所有领域</td></tr>
+    <tr><td><code>packs/</code> 领域包</td><td>槽位映射、功能唯一键、抽取规则、问法</td><td>领域负责人，自由改</td><td>只影响本领域</td></tr>
+    <tr><td><code>cards/</code> 卡片</td><td>具体知识</td><td>所有人 + 模型</td><td>随时可改，编译即可生效</td></tr>
+  </tbody>
+</table>
+
+<pre><code>strata/
+├── strata.py                    命令行入口（8 个子命令）
+├── core/                        内核：零业务词，改它要评审
+│   ├── schema.yaml                四槽位 / 五种边 / 六类空洞 / 六个查询接口
+│   ├── pack.schema.yaml           写领域包的契约
+│   ├── base.py                    SQLite 存储与枚举
+│   ├── compiler.py                卡片 → 索引（四类校验）
+│   ├── analyze.py                 空洞 / 影响面 / 覆盖 / 统计
+│   └── mcp_server.py              MCP（stdio / HTTP，6 个工具；HTTP 下附全景图页面）
+│   └── viz.py / viz_template.html 全景图导出（单文件 HTML，数据内嵌）
+├── extractors/cpp_static.py     C++ 源码 → 模块 / 符号 / 用例 / 边
+├── packs/generic-cpp/           通用 C++ 领域包
+├── cards/                       知识卡片（事实源，进 Git）
+│   ├── intent/  mechanism/  verification/
+├── index.sqlite                 派生索引（不进 Git，可删）
+├── .opencode/
+│   ├── skills/strata/           SKILL.md + scripts/ + references/
+│   └── commands/                strata-init / extract / impact / fill / review / status
+├── examples/                    参考领域包（可整目录删除）
+└── docs/                        本文档</code></pre>
+
+<h3>1.3 四层：场景 · 功能 · IT/UT · 实现</h3>
+
+<p>
+四个槽位是<b>语义角色</b>，不是四张表。领域差异全部下沉到领域包，
+内核只认槽位、边、空洞和查询接口。
+</p>
+
+<div class="fig">
+<svg viewBox="0 0 900 400" width="900" height="400" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="f3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="f3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+
+  <text x="40" y="22" font-size="12.5" font-weight="700" fill="#475569">业务轴 ↓</text>
+  <text x="40" y="38" font-size="11" fill="#94a3b8">回答：影响什么业务</text>
+  <text x="866" y="22" text-anchor="end" font-size="12.5" font-weight="700" fill="#475569">依赖轴 →</text>
+  <text x="866" y="38" text-anchor="end" font-size="11" fill="#94a3b8">回答：谁要重新验证</text>
+
+  <rect x="40" y="56" width="250" height="58" rx="8" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.4"/>
+  <text x="58" y="80" font-size="14" font-weight="700" fill="#6d28d9">intent　意图</text>
+  <text x="58" y="100" font-size="11" fill="#7c6ba8">场景 / 能力；数十条，人工维护</text>
+
+  <rect x="40" y="138" width="250" height="58" rx="8" fill="#ecfeff" stroke="#a5e4ee" stroke-width="1.4"/>
+  <text x="58" y="162" font-size="14" font-weight="700" fill="#0e7490">mechanism　功能</text>
+  <text x="58" y="182" font-size="11" fill="#3f7f8f">一个场景拆成多个功能点；百到千</text>
+
+  <rect x="40" y="220" width="250" height="58" rx="8" fill="#fffbeb" stroke="#fcd9a3" stroke-width="1.4"/>
+  <text x="58" y="244" font-size="14" font-weight="700" fill="#b45309">verification　验证</text>
+  <text x="58" y="264" font-size="11" fill="#9a6a2c">IT / UT 用例；数千</text>
+
+  <rect x="40" y="302" width="250" height="58" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.4"/>
+  <text x="58" y="326" font-size="14" font-weight="700" fill="#1d4ed8">implementation　实现</text>
+  <text x="58" y="346" font-size="11" fill="#4b6bb5">符号 / 组件；万级，不建卡片</text>
+
+  <line x1="164" y1="114" x2="164" y2="134" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#f3a)"/>
+  <line x1="164" y1="196" x2="164" y2="216" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#f3a)"/>
+  <line x1="164" y1="278" x2="164" y2="298" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#f3a)"/>
+
+  <line x1="364" y1="52" x2="364" y2="376" stroke="#cbd5e1" stroke-width="1.4" stroke-dasharray="5 5"/>
+  <text x="364" y="392" text-anchor="middle" font-size="10.5" fill="#94a3b8">仓边界 · 代码不共享</text>
+
+  <rect x="384" y="288" width="482" height="74" rx="9" fill="#fffdf5" stroke="#e8d9b8" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <text x="625" y="282" text-anchor="middle" font-size="10.5" fill="#a08a63">上游 / 兄弟仓 / 下游组件（拿不到源码）</text>
+
+  <rect x="398" y="306" width="140" height="44" rx="6" fill="#ffffff" stroke="#e2c98f"/>
+  <text x="468" y="333" text-anchor="middle" font-size="11" fill="#8a6d3b">上游</text>
+  <rect x="554" y="306" width="140" height="44" rx="6" fill="#ffffff" stroke="#e2c98f"/>
+  <text x="624" y="333" text-anchor="middle" font-size="11" fill="#8a6d3b">平行 · 兄弟仓</text>
+  <rect x="710" y="306" width="140" height="44" rx="6" fill="#ffffff" stroke="#e2c98f"/>
+  <text x="780" y="333" text-anchor="middle" font-size="11" fill="#8a6d3b">下游</text>
+
+  <line x1="294" y1="330" x2="394" y2="330" stroke="#b45309" stroke-width="1.8" marker-end="url(#f3b)"/>
+  <text x="344" y="322" text-anchor="middle" font-size="9.5" fill="#b45309" font-weight="600">depends_on</text>
+
+  <text x="625" y="392" text-anchor="middle" font-size="10.5" fill="#94a3b8">
+    依赖轴靠构建产物与契约缝合，不靠源码
+  </text>
+</svg>
+<div class="figcap"><b>图 3</b>　四个槽位构成业务轴，实现层向外连出依赖轴；两轴交于代码层</div>
+</div>
+
+<table>
+  <thead><tr>
+    <th style="width:100px">槽位</th><th style="width:66px">通用层名</th>
+    <th style="width:250px">语义角色</th>
+    <th>不同领域里的实际形态（示例）</th><th style="width:64px">规模</th>
+  </tr></thead>
+  <tbody>
+    <tr><td><code>intent</code></td><td><b>场景层</b></td><td>人要达成什么</td>
+        <td>一次整车升级 / 一次 ECU 刷写 / 这个库承诺的一项能力</td><td>十到百</td></tr>
+    <tr><td><code>mechanism</code></td><td><b>功能层</b></td>
+        <td><b>一个场景由哪几个功能点实现</b>（1 : N，不是一对一）</td>
+        <td>状态机 + 断电恢复 + 完整性校验 / 会话建立 + 服务分发 + 结果上报 / 一个功能模块</td><td>百到千</td></tr>
+    <tr><td><code>verification</code></td><td><b>验证层</b></td>
+        <td>怎么证明这些功能点成立。<b>全部是 IT / UT，两者只是粒度不同</b></td>
+        <td>IT：端到端升级、断电恢复；UT：状态机单测、诊断用例。
+            载体可能是 gtest、pytest、诊断脚本或 HIL，但都属于 IT/UT</td><td>千</td></tr>
+    <tr><td><code>implementation</code></td><td><b>实现层</b></td><td>代码实体</td>
+        <td colspan="1">符号 / 组件 —— 唯一一层与领域完全无关</td><td>万级</td></tr>
+  </tbody>
+</table>
+
+<p>
+<b>这张表只是示例，不是规范。</b>内核不认识「状态机」，也不认识「gtest」，
+它只认四个槽位名。具体某一层装什么、字段叫什么，由领域包决定：
+OTA 可以把功能点定成「状态 + 事件」，诊断可以定成「序列号 + 服务」，通用 C++ 库可以定成「模块」。
+换领域只换包，不动内核，也不改这张表的语义——<b>变的只是右列的例子</b>。
+</p>
+
+<div class="callout">
+  <span class="t">两个容易搞错的点</span>
+  <b>功能层不是「一层就一个功能」。</b>一个场景通常拆成 3–10 个功能点，
+  场景与功能点是 1 : N，<code>composed_of</code> 边上用 <code>weight</code> 表示覆盖程度，
+  所以「部分覆盖」也能如实表达。<br><br>
+  <b>验证层不按测试框架分类。</b>按 gtest / pytest / 诊断脚本分，等于把工具链焊进模型，
+  团队一换框架整个库就得重建。正确划分只有一条线：<b>这条用例是 IT 还是 UT</b>，
+  框架、语言、跑在台架上还是本机，都只是它的载体。
+</div>
+
+<p>
+关系分两类，性质完全不同，必须都建在同一个图里：
+</p>
+
+<table>
+  <thead><tr><th style="width:100px">关系</th><th>方向</th><th>回答什么</th><th>数据来源</th></tr></thead>
+  <tbody>
+    <tr><td><b>业务轴</b></td><td>代码 ← 用例 ← 功能点 ← 场景</td><td>改了这段代码，影响什么业务</td><td>本仓内即可闭环</td></tr>
+    <tr><td><b>依赖轴</b></td><td>组件 ↔ 组件、符号 ↔ 符号</td><td>改了这个导出符号，谁要重新验证</td><td>构建产物（ELF）、契约声明</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <span class="t">精度在某一层必须截断</span>
+  端到端 IT 一次能触及上千个符号。如果它和 UT 一样下钻到函数级，
+  「改了 A 影响什么」的答案会变成「影响全部」，影响面立刻失去意义。
+  正确做法：<b>IT 聚合到组件/接口级，UT 才下钻到符号级</b>，边上带 <code>weight</code> 表示覆盖强度。
+</div>
+
+<h2>2 · 数据模型</h2>
+
+<h3>2.1 五种边</h3>
+
+<p>边是这套系统全部价值的载体。判断一条边能不能入库，只问一句：<b>它凭什么存在？</b></p>
+
+<table>
+  <thead><tr><th style="width:105px">边</th><th style="width:175px">方向</th><th>含义</th><th>生成方式</th><th style="width:88px">默认置信度</th></tr></thead>
+  <tbody>
+    <tr><td><code>composed_of</code></td><td><code>intent → mechanism</code></td><td>场景由哪几个功能点拼成</td><td>人工 / 模型提议 + 审核</td><td><span class="tag t-certain">确定</span></td></tr>
+    <tr><td><code>verified_by</code></td><td><code>mechanism → verification</code></td><td>功能点由哪些用例验证</td><td>解析测试结构 / 被测符号归属</td><td><span class="tag t-certain">确定</span></td></tr>
+    <tr><td><code>exercises</code></td><td><code>verification → implementation</code></td><td>用例执行了哪些代码</td><td>覆盖率报告（首选）/ 调用匹配</td><td><span class="tag t-certain">确定</span> / <span class="tag t-likely">很可能</span></td></tr>
+    <tr><td><code>depends_on</code></td><td><code>implementation → implementation</code></td><td>调用 / 引用 / 继承</td><td>AST、ELF 符号交叉</td><td><span class="tag t-certain">确定</span></td></tr>
+    <tr><td><code>fulfills</code></td><td><code>intent → intent</code></td><td>跨领域串联</td><td>人工声明</td><td><span class="tag t-certain">确定</span></td></tr>
+  </tbody>
+</table>
+
+<p>
+边方向由内核强校验：写反了直接报错，不会静默入库。
+代价极小的一个约束，拦下的却是一整类错误——实测中 <code>verified_by</code> 方向写反，
+1349 条边被整批拒绝，没有校验的话这批错边会一直躺着到有人发现查不出东西。
+</p>
+
+<h3>2.2 证据账本</h3>
+
+<p>每条边必须带四个字段，缺一个就是 <code>H4</code> 致命空洞：</p>
+
+<table>
+  <thead><tr><th style="width:130px">字段</th><th>取值</th><th>作用</th></tr></thead>
+  <tbody>
+    <tr><td><code>source_type</code></td><td><code>extractor</code> / <code>manual</code> / <code>user-answer</code> / <code>llm-proposal</code></td><td>这条知识谁产生的</td></tr>
+    <tr><td><code>source_ref</code></td><td><code>file:line</code> / <code>report-id</code> / <code>conversation-id</code></td><td>回哪里核对</td></tr>
+    <tr><td><code>confidence</code></td><td><code>certain</code> / <code>likely</code> / <code>possible</code></td><td>结论档位，查询时分组</td></tr>
+    <tr><td><code>evidence</code></td><td>一条能验证的原文或位置</td><td>审计时唯一靠得住的东西</td></tr>
+  </tbody>
+</table>
+
+<table>
+  <thead><tr><th>来源</th><th style="width:110px">默认置信度</th><th>理由</th></tr></thead>
+  <tbody>
+    <tr><td>覆盖率、符号表、AST（可复现）</td><td><span class="tag t-certain">确定</span></td><td>跑一遍就能验证</td></tr>
+    <tr><td>启发式匹配（按名字、按 include）</td><td><span class="tag t-likely">很可能</span></td><td>有依据，但可能漏或串</td></tr>
+    <tr><td>人工填写</td><td><span class="tag t-certain">确定</span></td><td>人对自己写的东西负责</td></tr>
+    <tr><td>用户问答补全</td><td><span class="tag t-likely">很可能</span></td><td>口述可能记错，需代码印证</td></tr>
+    <tr><td>模型提议</td><td><span class="tag t-possible">可能</span></td><td>必须人确认才能升档</td></tr>
+  </tbody>
+</table>
+
+<h3>2.3 卡片结构</h3>
+
+<div class="fig">
+<svg viewBox="0 0 900 404" width="900" height="404" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="f4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="f4r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <text x="40" y="26" font-size="12.5" font-weight="700" fill="#1e293b">一张卡片</text>
+
+  <rect x="40" y="36" width="386" height="118" rx="7" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.3"/>
+  <text x="56" y="58" font-size="12" font-weight="700" fill="#6d28d9">frontmatter　机器读</text>
+  <text x="56" y="80" font-size="10.5" font-family="Consolas,monospace" fill="#5b4b8a">id: cpp.tst.base_test.format_to</text>
+  <text x="56" y="98" font-size="10.5" font-family="Consolas,monospace" fill="#5b4b8a">slot: verification　status: confirmed</text>
+  <text x="56" y="116" font-size="10.5" font-family="Consolas,monospace" fill="#5b4b8a">confidence: likely　source: extractor</text>
+  <text x="56" y="134" font-size="10.5" font-family="Consolas,monospace" fill="#5b4b8a">evidence: "test/core-test.cc:698"</text>
+
+  <rect x="40" y="164" width="386" height="80" rx="7" fill="#fffbeb" stroke="#fcd9a3" stroke-width="1.3"/>
+  <text x="56" y="186" font-size="12" font-weight="700" fill="#b45309">正文　模型读</text>
+  <text x="56" y="208" font-size="10.5" fill="#9a6a2c">这个用例验证 format_to 在基础类型上的输出，</text>
+  <text x="56" y="226" font-size="10.5" fill="#9a6a2c">包括空容器、超长字符串、格式化串复用三种情况。</text>
+
+  <rect x="40" y="254" width="386" height="86" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/>
+  <text x="56" y="276" font-size="12" font-weight="700" fill="#1d4ed8">links　就是边</text>
+  <text x="56" y="298" font-size="10.5" font-family="Consolas,monospace" fill="#3b5bab">to: cpp.mod.core　type: verified_by</text>
+  <text x="56" y="316" font-size="10.5" font-family="Consolas,monospace" fill="#3b5bab">to: cpp.sym.format_to　type: exercises</text>
+  <text x="56" y="334" font-size="10" fill="#6b85c0">正文里的 [[双链]] 只是路标，编译器忽略</text>
+
+  <text x="480" y="26" font-size="12.5" font-weight="700" fill="#1e293b">状态闸门</text>
+
+  <rect x="480" y="38" width="196" height="50" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/>
+  <text x="494" y="60" font-size="12.5" font-weight="700" fill="#64748b">draft</text>
+  <text x="494" y="78" font-size="10.5" fill="#94a3b8">模型刚写出来，默认不返回</text>
+
+  <line x1="578" y1="88" x2="578" y2="112" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#f4a)"/>
+
+  <rect x="480" y="116" width="196" height="50" rx="6" fill="#fffbeb" stroke="#f0c67a" stroke-width="1.6"/>
+  <text x="494" y="138" font-size="12.5" font-weight="700" fill="#b45309">proposed</text>
+  <text x="494" y="156" font-size="10.5" fill="#9a6a2c">模型能写到的上限</text>
+
+  <line x1="578" y1="166" x2="578" y2="190" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#f4a)"/>
+  <text x="590" y="182" font-size="10" fill="#94a3b8">人确认 / 机器证据</text>
+
+  <rect x="480" y="194" width="196" height="50" rx="6" fill="#ecfdf5" stroke="#8fd3b8" stroke-width="1.6"/>
+  <text x="494" y="216" font-size="12.5" font-weight="700" fill="#047857">confirmed</text>
+  <text x="494" y="234" font-size="10.5" fill="#3f7d68">查询默认只信这一档</text>
+
+  <rect x="700" y="194" width="158" height="50" rx="6" fill="#fef2f2" stroke="#f3b4b4" stroke-width="1.4"/>
+  <text x="714" y="216" font-size="12.5" font-weight="700" fill="#dc2626">disputed</text>
+  <text x="714" y="234" font-size="10.5" fill="#b45309">发现矛盾，标冲突</text>
+
+  <line x1="680" y1="219" x2="696" y2="219" stroke="#dc2626" stroke-width="1.5"
+        stroke-dasharray="4 3" marker-end="url(#f4r)"/>
+
+  <line x1="40" y1="366" x2="858" y2="366" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="40" y="390" font-size="11.5" fill="#64748b">
+    符号卡的 frontmatter 还会带 locations：一个符号的全部出现位置（声明 + 各文件定义），行级定位靠它。
+  </text>
+</svg>
+<div class="figcap"><b>图 4</b>　卡片三段各司其职；status 闸门保证模型无法把推测写成事实</div>
+</div>
+
+<pre><code><span class="c-com">---</span>
+<span class="c-key">id</span>: cpp.tst.base_test.format_to     <span class="c-com"># 全局唯一，用路径+FQN 生成，不用自增</span>
+<span class="c-key">slot</span>: verification
+<span class="c-key">domain</span>: generic-cpp
+<span class="c-key">title</span>: base_test.format_to
+<span class="c-key">status</span>: confirmed                  <span class="c-com"># draft → proposed → confirmed</span>
+<span class="c-key">confidence</span>: likely                 <span class="c-com"># 档位跟着证据走</span>
+<span class="c-key">source</span>: extractor
+<span class="c-key">source_ref</span>: test/core-test.cc:698
+<span class="c-key">links</span>:                             <span class="c-com"># 这就是边，唯一可信的连接来源</span>
+  - { to: cpp.mod.core, type: verified_by, weight: 1.0 }
+  - { to: cpp.sym.format_to, type: exercises, weight: 0.8 }
+<span class="c-key">evidence</span>:
+  - { ref: <span class="c-str">"test/core-test.cc:698"</span>, note: "TEST(base_test, format_to)" }
+<span class="c-com">---</span>
+
+正文：这个用例验证 format_to 在基础类型上的输出，
+包括空容器、超长字符串、格式化串复用三种情况。</code></pre>
+
+<table>
+  <thead><tr><th style="width:150px">部分</th><th>谁读</th><th>作用</th></tr></thead>
+  <tbody>
+    <tr><td><code>frontmatter.links</code></td><td>编译器</td><td><b>边</b>，唯一可信的连接来源</td></tr>
+    <tr><td>frontmatter 其余字段</td><td>查询层</td><td>决定这条知识能不能被信任、怎么分组</td></tr>
+    <tr><td>正文</td><td>模型</td><td>检索上下文，让模型理解节点语义</td></tr>
+    <tr><td>正文里的 <code>[[双链]]</code></td><td>模型</td><td>路标；<b>编译器忽略</b>，避免重复计边</td></tr>
+  </tbody>
+</table>
+
+<h3>2.4 状态闸门</h3>
+
+<table>
+  <thead><tr><th style="width:105px">状态</th><th>含义</th><th style="width:150px">谁能置为</th><th>查询时</th></tr></thead>
+  <tbody>
+    <tr><td><code>draft</code></td><td>草稿</td><td>模型</td><td>不返回</td></tr>
+    <tr><td><code>proposed</code></td><td>模型认为可以了</td><td>模型</td><td>单独成组，标「未确认」</td></tr>
+    <tr><td><code>confirmed</code></td><td>人确认，或有机器证据</td><td><b>人或抽取器</b></td><td>正常返回</td></tr>
+    <tr><td><code>disputed</code></td><td>发现矛盾</td><td>任何人</td><td>返回并标冲突</td></tr>
+  </tbody>
+</table>
+
+<p>
+<b>模型的产出上限是 <code>proposed</code>。</b>这条规则比任何 prompt 约束都硬：
+即使模型判断错了，错的也只是「未确认」那一组，不会污染结论。
+</p>
+
+<h2>3 · 构建：用命令，不用手动敲脚本</h2>
+
+<p>
+建库的全部操作是几条斜杠命令。每个命令内部嵌了 shell 块，OpenCode 在提交提示词之前
+先把脚本跑掉，把真实输出塞进模型上下文——所以模型看到的是<b>库里的实际情况</b>，
+而不是它以为的情况。第一次建库只需要一条 <code>/strata-build</code>。
+</p>
+
+<h3>3.1 安装（三步，不需要配环境变量）</h3>
+
+<pre><code><span class="c-com"># 1) 依赖：只有一个 PyYAML，其余是 Python 标准库。全流程离线</span>
+pip install pyyaml
+
+<span class="c-com"># 2) 把 skill 和命令复制到你的代码仓（在代码仓根目录执行）</span>
+cp -r /path/to/strata/.opencode/skills/strata  .opencode/skills/
+cp -r /path/to/strata/.opencode/commands       .opencode/commands/
+
+<span class="c-com"># 3) 指定知识库工程在哪 —— 二选一，都不用碰 shell profile</span>
+<span class="c-com">#    a. 写一次配置（推荐）：之后所有命令都不用再带路径</span>
+python .opencode/skills/strata/scripts/strata-run.py home set /path/to/strata
+<span class="c-com">#    b. 临时试：命令里直接带 --home，什么配置都不写</span>
+<span class="c-com">#    /strata-build /path/to/你的代码仓 --home /path/to/strata</span></code></pre>
+
+<p>
+定位工程根有四种方式，优先级从高到低。<b>命令行参数永远排第一</b>——
+因为环境变量和配置文件都会过期，换个仓、换个人、换台机器就指错地方了：
+</p>
+
+<table>
+  <thead><tr><th style="width:210px">方式</th><th>写法</th><th style="width:150px">什么时候用</th></tr></thead>
+  <tbody>
+    <tr><td><b>命令带目录</b></td>
+        <td><code>/strata-build ./repo --home /path/to/strata</code></td>
+        <td>临时试一下、或一次性的仓</td></tr>
+    <tr><td><b>仓内配置</b></td>
+        <td><code>home set &lt;路径&gt;</code> → 写进 <code>.opencode/strata.home</code></td>
+        <td>日常开发，写一次管很久</td></tr>
+    <tr><td>环境变量</td>
+        <td><code>export STRATA_HOME=/path/to/strata</code></td>
+        <td>CI / 容器，进程级、跟着流水线走</td></tr>
+    <tr><td>skill 自身位置</td>
+        <td>skill 装在工程内部时自动命中</td>
+        <td>在知识库工程里自己调试</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <span class="t">为什么不再要求配环境变量</span>
+  环境变量是<b>进程级</b>的：新开一个终端就没了，换个人登录同一台机器也没了，
+  而它指向的目录恰恰是团队共享的。写进 <code>.opencode/strata.home</code> 的路径
+  跟着仓库走，谁 clone 谁生效；命令里带 <code>--home</code> 则完全无状态，跑完不留痕。
+  环境变量保留给 CI，因为那里恰好需要一个外部注入的变量。
+</div>
+
+<div class="callout warn">
+  <span class="t">找不到工程根时不要猜路径</span>
+  四种方式都没命中时，脚本会列出「仓内配置 / 环境变量 / skill 位置」各自解析到什么，
+  然后报错退出，<b>不会静默写到一个莫名其妙的目录</b>。这是刻意的：宁可失败，也不能写错地方。
+</div>
+
+<h3>3.2 一条主线 + 六个零件</h3>
+
+<div class="fig">
+<svg viewBox="0 0 900 430" width="900" height="430" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="f5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="f5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6d28d9"/>
+    </marker>
+  </defs>
+
+  <rect x="40" y="8" width="820" height="34" rx="7" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1.3"/>
+  <text x="450" y="30" text-anchor="middle" font-size="12" font-weight="700" fill="#1e40af">
+    /strata-build —— 第一次建库只敲这一条：下面三步它按顺序驱动，只在需要你拍板时停下来
+  </text>
+
+  <text x="40" y="70" font-size="11.5" font-weight="700" fill="#64748b">它会依次做完（每步都有真实输出）</text>
+
+  <rect x="40" y="84" width="230" height="86" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="58" y="108" font-size="12.5" font-family="Consolas,monospace" font-weight="700" fill="#1d4ed8">/strata-init</text>
+  <text x="58" y="130" font-size="10.5" fill="#4b6bb5">where → extract → compile</text>
+  <text x="58" y="148" font-size="10.5" fill="#4b6bb5">再读文档，播 12 张草稿卡</text>
+  <text x="58" y="164" font-size="10" fill="#6b85c0">产出：索引 + 待审草稿</text>
+
+  <line x1="274" y1="128" x2="306" y2="128" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#f5a)"/>
+
+  <rect x="310" y="84" width="230" height="86" rx="8" fill="#fffbeb" stroke="#fcd9a3" stroke-width="1.5"/>
+  <text x="328" y="108" font-size="12.5" font-family="Consolas,monospace" font-weight="700" fill="#b45309">/strata-review</text>
+  <text x="328" y="130" font-size="10.5" fill="#9a6a2c">drafts → 逐张汇报</text>
+  <text x="328" y="148" font-size="10.5" fill="#9a6a2c">你说「确认 / 改 / 删」</text>
+  <text x="328" y="164" font-size="10" fill="#b8935c">产出：confirmed 卡片</text>
+
+  <line x1="544" y1="128" x2="576" y2="128" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#f5a)"/>
+
+  <rect x="580" y="84" width="230" height="86" rx="8" fill="#ecfdf5" stroke="#8fd3b8" stroke-width="1.5"/>
+  <text x="598" y="108" font-size="12.5" font-family="Consolas,monospace" font-weight="700" fill="#047857">/strata-fill</text>
+  <text x="598" y="130" font-size="10.5" fill="#3f7d68">holes → 一次问一条</text>
+  <text x="598" y="148" font-size="10.5" fill="#3f7d68">写回卡片 → 重新编译</text>
+  <text x="598" y="164" font-size="10" fill="#3f7d68">产出：空洞减少</text>
+
+  <path d="M695,84 C695,58 425,58 425,80" fill="none" stroke="#6d28d9"
+        stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#f5b)"/>
+  <text x="560" y="54" text-anchor="middle" font-size="10" fill="#6d28d9">补完之后又攒出新的草稿，回到裁决</text>
+
+  <text x="40" y="206" font-size="11.5" font-weight="700" fill="#64748b">日常（随时可用，不改数据）</text>
+
+  <rect x="40" y="218" width="412" height="86" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.4"/>
+  <text x="58" y="242" font-size="12.5" font-family="Consolas,monospace" font-weight="700" fill="#334155">/strata-impact</text>
+  <text x="58" y="264" font-size="10.5" fill="#64748b">git diff → 按行范围定位改动点 → 回溯</text>
+  <text x="58" y="282" font-size="10.5" fill="#64748b">输出三档影响 + 必跑测试清单</text>
+  <text x="58" y="298" font-size="10" fill="#94a3b8">用在动代码之前</text>
+
+  <rect x="470" y="218" width="390" height="86" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.4"/>
+  <text x="488" y="242" font-size="12.5" font-family="Consolas,monospace" font-weight="700" fill="#334155">/strata-status</text>
+  <text x="488" y="264" font-size="10.5" fill="#64748b">where + stat + holes 一次看全</text>
+  <text x="488" y="282" font-size="10.5" fill="#64748b">给一句「能不能用、短板在哪」的判断</text>
+  <text x="488" y="298" font-size="10" fill="#94a3b8">用在每次重建之后</text>
+
+  <text x="450" y="344" text-anchor="middle" font-size="11.5" fill="#64748b">
+    每一步做完都会跑一次 next，把下一条命令告诉你——所以流程是连贯的，不用你记顺序
+  </text>
+  <text x="450" y="368" text-anchor="middle" font-size="11" fill="#94a3b8">
+    命令内部的 shell 块在提交提示词前就执行，模型看到的是真实输出而不是它的推测
+  </text>
+  <text x="450" y="396" text-anchor="middle" font-size="11" fill="#94a3b8">
+    /strata-extract 是第七个：只在代码大改之后单独跑，平时由 build 顺带完成
+  </text>
+</svg>
+<div class="figcap"><b>图 5</b>　七个命令：build 是一条主线，剩下六个是它能被单独调用的零件</div>
+</div>
+
+<table>
+  <thead><tr><th style="width:150px">命令</th><th>什么时候用</th><th>它内部跑了什么</th></tr></thead>
+  <tbody>
+    <tr><td><code>/strata-build</code></td><td><b>第一次建库，只敲这一条</b></td>
+        <td>依次驱动下面三步，每步之间把真实输出给你看，需要裁决时才停下问你</td></tr>
+    <tr><td><code>/strata-init</code></td><td>想单独重跑抽取</td><td><code>where</code> → <code>extract</code> → <code>compile</code>，
+        然后模型读文档播种场景卡</td></tr>
+    <tr><td><code>/strata-extract</code></td><td>代码大改之后</td><td><code>extract</code> → <code>compile</code> → <code>holes</code>，
+        模型对比前后数字找异常</td></tr>
+    <tr><td><code>/strata-impact</code></td><td>每次动代码之前</td><td><code>git diff --stat</code> → <code>impact-diff</code>，
+        模型按三档汇报并给必跑测试清单</td></tr>
+    <tr><td><code>/strata-fill</code></td><td>每周治理</td><td><code>holes</code> → 逐条提问 → 改卡片 → <code>compile</code></td></tr>
+    <tr><td><code>/strata-review</code></td><td>模型播种之后</td><td><code>drafts</code> → 逐张裁决 → <code>compile</code></td></tr>
+    <tr><td><code>/strata-status</code></td><td>想看库健不健康</td><td><code>where</code> + <code>stat</code> + <code>holes</code></td></tr>
+  </tbody>
+</table>
+
+<div class="callout ok">
+  <span class="t">为什么不用记顺序</span>
+  每条命令的最后都跑一次 <code>strata-run.py next</code>，它按库的真实状态判断下一条该干什么：
+  有草稿 → 让你 review；有致命空洞 → 让你 fill；都没有 → 告诉你库能用了。
+  这个判断<b>由脚本做，不由模型猜</b>，所以不会出现「刚建完就让你去补一个不存在的空洞」。
+</div>
+
+<h3>3.3 第一次建库：跑起来是什么样</h3>
+
+<p><b>第一步 · 抽取与编译</b>（<code>/strata-build</code> 的前三个 shell 块）：</p>
+
+<pre><code>$ python .opencode/skills/strata/scripts/strata-run.py where
+Strata 自检
+==========================================================
+工程根      /path/to/strata
+索引        /path/to/strata/index.sqlite  不存在
+卡片文件    0
+领域包      generic-cpp
+
+$ python .opencode/skills/strata/scripts/strata-run.py extract .
+抽取完成  模块 16  符号 776  用例 683  能力 31
+边         verified_by 1010  exercises 793  composed_of 20
+
+$ python .opencode/skills/strata/scripts/strata-run.py compile
+按槽位:   implementation=776  intent=31  mechanism=16  verification=683
+按边类型: composed_of=20  verified_by=1010  exercises=793
+按置信度: certain=792  possible=31  likely=683
+
+<span class="c-ok">校验通过，无错误无警告。</span></code></pre>
+
+<p>
+模型接着会把这三个分布念给你听，并抽一张用例卡去核对行号——因为<b>证据链不可复核的话，
+整个库都不可信</b>。这一步是强制的。
+</p>
+
+<p><b>第二步 · 播种场景</b>（模型的主力工作）。它读你指定的文档，一次产出不超过 12 张草稿卡：</p>
+
+<pre><code><span class="c-com">---</span>
+<span class="c-key">id</span>: ota.scn.power-loss-recovery
+<span class="c-key">slot</span>: intent
+<span class="c-key">domain</span>: ota
+<span class="c-key">title</span>: 刷写中断电后恢复
+<span class="c-key">status</span>: draft                    <span class="c-com"># 只能是 draft</span>
+<span class="c-key">confidence</span>: possible               <span class="c-com"># 没有代码证据支撑</span>
+<span class="c-key">source</span>: llm-proposal
+<span class="c-key">links</span>:
+  - { to: ota.tr.flashing-power-lost, type: composed_of, weight: 1.0 }
+<span class="c-key">evidence</span>:
+  - { ref: <span class="c-str">"docs/upgrade-spec.md#42"</span>, note: "文档明确要求回滚" }
+<span class="c-com">---</span></code></pre>
+
+<p><b>第三步 · 裁决</b>（<code>/strata-build</code> 自动进入这一步）。模型逐张汇报，
+你只需要说「确认 / 改 / 删」。确认后 <code>status</code> 变 <code>confirmed</code>，重新编译即被查询采纳。</p>
+
+<p><b>第四步 · 交接</b>。每步收尾都会跑一次状态判断，输出长这样，模型必须照它告诉你下一条命令：</p>
+
+<pre><code>$ python .opencode/skills/strata/scripts/strata-run.py next
+当前状态
+==========================================================
+  intent=31  mechanism=16  verification=683  implementation=776  合计 1506
+  待裁决 intent=31
+
+下一步：/strata-review
+原因  ：有 31 张草稿没裁决（intent 31 张）。
+之后  ：/strata-fill 补结构空洞。</code></pre>
+
+<p>
+这就是「流程连贯」的全部机制：不需要你记住七条命令的先后，也不需要模型自由发挥判断该干嘛——
+<b>下一步由库的真实状态决定</b>，换个仓、换个阶段，答案自动变。
+</p>
+
+<div class="callout ok">
+  <span class="t">为什么一次只播 12 张</span>
+  批量生成几百张「语义漂亮但挂不上任何代码」的卡片，是这类系统最常见的死法——
+  你会在两周里手工接线，然后放弃。小批量 + 逐条 review，用户能看完、能纠错，
+  这才是知识库能长期活下去的原因。
+</div>
+
+<h3>3.4 三方分工</h3>
+
+<table>
+  <thead><tr><th style="width:110px">角色</th><th>只做这些</th><th>绝不能做</th></tr></thead>
+  <tbody>
+    <tr><td><b>脚本</b></td><td>解析卡片、建索引、遍历、校验、扫洞</td><td>任何语义判断</td></tr>
+    <tr><td><b>模型</b></td><td>读文档、提议场景、连边、按模板提问、解释查询结果</td><td>写 <code>confirmed</code>、编造场景、绕过校验</td></tr>
+    <tr><td><b>人</b></td><td>裁决草稿、回答空洞、决定领域包的功能粒度</td><td>手工维护上万条符号边</td></tr>
+  </tbody>
+</table>
+
+<h2>4 · 使用：一套服务端，全组共用</h2>
+
+<p>
+建库的人用 skill，<b>查库的人只需要一个 URL</b>。这是两种接入，不是两种权限：
+索引只有一份，服务端只有一个，全组通过远端 MCP 连过来查同一份数据。
+</p>
+
+<h3>4.1 部署形态</h3>
+
+<div class="fig">
+<svg viewBox="0 0 900 336" width="900" height="336" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="f7a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="f7b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0e7490"/>
+    </marker>
+    <marker id="f7c" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M10,0 L0,5 L10,10 z" fill="#0e7490"/>
+    </marker>
+  </defs>
+
+  <text x="40" y="26" font-size="11.5" font-weight="700" fill="#64748b">建库侧（一个人，或一个小组）</text>
+  <text x="650" y="26" font-size="11.5" font-weight="700" fill="#64748b">查询侧（全组，只读）</text>
+
+  <rect x="40" y="42" width="238" height="150" rx="9" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.4"/>
+  <text x="58" y="66" font-size="12.5" font-weight="700" fill="#6d28d9">建库机 · 有写权限</text>
+  <text x="58" y="90" font-size="10.5" fill="#6b5b9a">cards/　Markdown 事实源</text>
+  <text x="58" y="108" font-size="10.5" fill="#6b5b9a">index.sqlite　派生物</text>
+  <text x="58" y="126" font-size="10.5" fill="#6b5b9a">gaps.jsonl　缺口流水</text>
+  <text x="58" y="152" font-size="10.5" fill="#6d28d9">跑 /strata-build 与 /strata-fill</text>
+  <text x="58" y="172" font-size="9.5" fill="#8b7bb8">卡片进 Git，可 review、可 diff</text>
+
+  <line x1="282" y1="118" x2="330" y2="118" stroke="#94a3b8" stroke-width="1.7" marker-end="url(#f7a)"/>
+  <text x="306" y="106" text-anchor="middle" font-size="9" fill="#94a3b8">compile</text>
+  <text x="306" y="136" text-anchor="middle" font-size="9" fill="#94a3b8">同一目录</text>
+
+  <rect x="334" y="42" width="232" height="150" rx="9" fill="#ecfeff" stroke="#a5e4ee" stroke-width="1.5"/>
+  <text x="352" y="66" font-size="12.5" font-weight="700" fill="#0e7490">MCP 服务端 · 常驻</text>
+  <text x="352" y="90" font-size="10.5" fill="#3f7f8f">serve --http --port 8760</text>
+  <text x="352" y="108" font-size="10.5" fill="#3f7f8f">只读打开 index.sqlite</text>
+  <text x="352" y="126" font-size="10.5" fill="#3f7f8f">Bearer token 鉴权</text>
+  <text x="352" y="152" font-size="10.5" fill="#0e7490">6 个语义化工具</text>
+  <text x="352" y="172" font-size="9.5" fill="#5c93a3">重编后不用重启，下一请求即新数据</text>
+
+  <line x1="570" y1="102" x2="642" y2="102" stroke="#0e7490" stroke-width="1.6" marker-end="url(#f7b)"/>
+  <line x1="646" y1="132" x2="574" y2="132" stroke="#0e7490" stroke-width="1.5"
+        stroke-dasharray="5 4" marker-end="url(#f7c)"/>
+  <text x="608" y="94" text-anchor="middle" font-size="9.5" fill="#0e7490">tools/call</text>
+  <text x="608" y="150" text-anchor="middle" font-size="9.5" fill="#5c93a3">结果 + 证据</text>
+
+  <rect x="650" y="52" width="210" height="34" rx="6" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="755" y="74" text-anchor="middle" font-size="10.5" fill="#1d4ed8">开发者 A · OpenCode</text>
+
+  <rect x="650" y="100" width="210" height="34" rx="6" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="755" y="122" text-anchor="middle" font-size="10.5" fill="#1d4ed8">开发者 B · 另一种客户端</text>
+
+  <rect x="650" y="148" width="210" height="34" rx="6" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="755" y="170" text-anchor="middle" font-size="10.5" fill="#1d4ed8">CI / 脚本 · 同样的 URL</text>
+
+  <text x="450" y="232" text-anchor="middle" font-size="11.5" fill="#475569">
+    一份索引 + 一个服务端，全组连同一个 URL——而不是每人拷一份 index.sqlite
+  </text>
+  <text x="450" y="256" text-anchor="middle" font-size="11" fill="#94a3b8">
+    每人拷一份的后果：三周后五个人的库各不相同，谁也说不清哪个结论是对的
+  </text>
+  <text x="450" y="288" text-anchor="middle" font-size="11" fill="#94a3b8">
+    服务端只读打开索引，所以查询请求不可能改坏数据；写操作只发生在建库机上
+  </text>
+</svg>
+<div class="figcap"><b>图 6</b>　部署形态：建库机写、服务端读、全组用；三者的唯一契约是同一个 index.sqlite</div>
+</div>
+
+<p>
+<b>不要每人拷一份 <code>index.sqlite</code>。</b>这个方案在两周内就会崩：
+五个人各拷一份，各自跑一次 <code>extract</code>，五个库的节点数就开始不一样，
+两个月后没人说得清「改了 format_to 影响 54 个用例」这个结论是哪份库跑出来的。
+正确做法是把「库」当成团队的一份共享资产，像 Git 仓库一样只有一份正本。
+</p>
+
+<p>在<b>建库机</b>上起服务（这台机器有卡片和索引的写权限）：</p>
+
+<pre><code><span class="c-com"># 基本用法：监听所有网卡，带一个组内口令</span>
+python strata.py serve --http --host 0.0.0.0 --port 8760 --token <组内约定口令>
+
+<span class="c-com"># 自检：返回节点数、边数、最近一次编译时间</span>
+curl http://10.0.0.21:8760/healthz
+<span class="c-ok">{"ok": true, "nodes": 1506, "edges": 1823, "compiled_at": "2026-11-08T23:01:37+0800"}</span></code></pre>
+
+<table>
+  <thead><tr><th style="width:150px">参数</th><th>作用</th><th style="width:230px">不设会怎样</th></tr></thead>
+  <tbody>
+    <tr><td><code>--http</code></td><td>走 Streamable HTTP 传输，远端可连</td>
+        <td>退回 stdio，只能本机拉起子进程用</td></tr>
+    <tr><td><code>--host</code></td><td>监听地址，团队用就写 <code>0.0.0.0</code></td>
+        <td>只监听 127.0.0.1，别人连不进来</td></tr>
+    <tr><td><code>--port</code></td><td>端口，默认 8760</td><td>—</td></tr>
+    <tr><td><code>--token</code></td><td>要求 <code>Authorization: Bearer &lt;token&gt;</code></td>
+        <td>任何能访问该端口的人都能查（内网也建议设，防误连）</td></tr>
+    <tr><td><code>--db</code></td><td>指定索引路径</td><td>用工程自带的 <code>index.sqlite</code></td></tr>
+  </tbody>
+</table>
+
+<p>
+常驻方面没有魔法：Linux 上包一个 systemd 单元，Windows 上用任务计划（开机启动、
+失败重启）。服务端是纯 Python 标准库实现，<b>不依赖 Node、不依赖任何外部服务</b>，
+内网离线环境可以直接跑。
+</p>
+
+<h3>4.2 开发者怎么接</h3>
+
+<p>每个开发者在自己的 <code>opencode.json</code> 里加一段，指向同一个 URL：</p>
+
+<pre><code>{
+  <span class="c-str">"$schema"</span>: <span class="c-str">"https://opencode.ai/config.json"</span>,
+  <span class="c-str">"mcp"</span>: {
+    <span class="c-str">"strata"</span>: {
+      <span class="c-str">"type"</span>: <span class="c-str">"remote"</span>,
+      <span class="c-str">"url"</span>: <span class="c-str">"http://10.0.0.21:8760/mcp"</span>,
+      <span class="c-str">"headers"</span>: { <span class="c-str">"Authorization"</span>: <span class="c-str">"Bearer &lt;组内约定口令&gt;"</span> },
+      <span class="c-str">"enabled"</span>: true
+    }
+  }
+}</code></pre>
+
+<p>
+其它客户端同理：填 URL、填一个鉴权头就够了，不需要装 Python、不需要拿到源码。
+连上之后第一次 <code>initialize</code> 会把「三档不许合并、查不到要登记缺口」这些规则
+一起带给模型（服务端的 <code>instructions</code> 字段），所以换客户端也不用重新交代一遍。
+</p>
+
+<p>接上之后你不需要记任何命令，直接问就行。六个工具对应六类问题：</p>
+
+<table>
+  <thead><tr><th style="width:250px">你问什么</th><th style="width:150px">AI 调哪个工具</th><th>你得到什么</th></tr></thead>
+  <tbody>
+    <tr><td>「改 <code>format_to</code> 会影响什么」</td><td><code>impact_of_change</code></td><td>三档影响的用例/功能点/场景 + 传播路径</td></tr>
+    <tr><td>「改这几个文件会影响什么」</td><td><code>impact_of_change</code>（模型先解析 diff）</td><td>同上，起点自动定位</td></tr>
+    <tr><td>「Format API 这个能力可靠吗」</td><td><code>coverage_of_intent</code></td><td>它覆盖的功能点、用例、符号清单</td></tr>
+    <tr><td>「这个库还缺什么」</td><td><code>find_holes</code></td><td>六类结构空洞的待补清单</td></tr>
+    <tr><td>「你凭什么说这个用例覆盖了它」</td><td><code>explain_edge</code></td><td>边的完整 provenance（文件行号/报告）</td></tr>
+    <tr><td>「库里现在有多少东西」</td><td><code>graph_stats</code></td><td>各层规模、边数、置信度分布</td></tr>
+    <tr><td>「这个查不到，记下来」</td><td><code>log_gap</code></td><td>缺口 id，落进 <code>gaps.jsonl</code>，下次编译进库</td></tr>
+  </tbody>
+</table>
+
+<h3>4.3 一次真实会话</h3>
+
+<div class="fig">
+<svg viewBox="0 0 900 366" width="900" height="366" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="f6a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="f6b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0e7490"/>
+    </marker>
+  </defs>
+
+  <rect x="46" y="14" width="128" height="36" rx="7" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.3"/>
+  <text x="110" y="38" text-anchor="middle" font-size="12" font-weight="700" fill="#6d28d9">你</text>
+  <rect x="336" y="14" width="128" height="36" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/>
+  <text x="400" y="38" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">OpenCode</text>
+  <rect x="636" y="14" width="128" height="36" rx="7" fill="#ecfeff" stroke="#a5e4ee" stroke-width="1.3"/>
+  <text x="700" y="38" text-anchor="middle" font-size="12" font-weight="700" fill="#0e7490">MCP 服务端</text>
+
+  <line x1="110" y1="50" x2="110" y2="286" stroke="#e2e8f0" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <line x1="400" y1="50" x2="400" y2="286" stroke="#e2e8f0" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <line x1="700" y1="50" x2="700" y2="286" stroke="#e2e8f0" stroke-width="1.3" stroke-dasharray="4 4"/>
+
+  <line x1="114" y1="92" x2="394" y2="92" stroke="#475569" stroke-width="1.6" marker-end="url(#f6a)"/>
+  <text x="254" y="84" text-anchor="middle" font-size="11" fill="#334155">改了 format_to，会影响什么？</text>
+
+  <line x1="404" y1="142" x2="694" y2="142" stroke="#0e7490" stroke-width="1.6" marker-end="url(#f6b)"/>
+  <text x="549" y="134" text-anchor="middle" font-size="10.5" font-family="Consolas,monospace" fill="#0e7490">
+    tools/call · impact_of_change
+  </text>
+
+  <line x1="696" y1="192" x2="406" y2="192" stroke="#0e7490" stroke-width="1.6"
+        stroke-dasharray="6 4" marker-end="url(#f6b)"/>
+  <text x="551" y="184" text-anchor="middle" font-size="10.5" fill="#3f7f8f">
+    三档文本 + 传播路径 + 证据
+  </text>
+
+  <line x1="396" y1="244" x2="116" y2="244" stroke="#475569" stroke-width="1.6" marker-end="url(#f6a)"/>
+  <text x="256" y="236" text-anchor="middle" font-size="11" fill="#334155">
+    保留档位的转述 + 必跑测试清单
+  </text>
+
+  <text x="46" y="318" font-size="11.5" font-weight="650" fill="#475569">回答长这样：</text>
+
+  <rect x="140" y="298" width="220" height="46" rx="6" fill="#ecfdf5" stroke="#8fd3b8"/>
+  <text x="250" y="318" text-anchor="middle" font-size="11" font-weight="700" fill="#047857">确定影响　0 条</text>
+  <text x="250" y="334" text-anchor="middle" font-size="9.5" fill="#3f7d68">未接覆盖率，如实为空</text>
+
+  <rect x="372" y="298" width="220" height="46" rx="6" fill="#fffbeb" stroke="#f0c67a"/>
+  <text x="482" y="318" text-anchor="middle" font-size="11" font-weight="700" fill="#b45309">很可能影响　54 条</text>
+  <text x="482" y="334" text-anchor="middle" font-size="9.5" fill="#9a6a2c">9 模块 + 45 用例</text>
+
+  <rect x="604" y="298" width="220" height="46" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="714" y="318" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">可能影响　14 条</text>
+  <text x="714" y="334" text-anchor="middle" font-size="9.5" fill="#64748b">14 个上层能力</text>
+</svg>
+<div class="figcap"><b>图 7</b>　接上 MCP 后的一次真实问答：模型只负责调工具和转述，数字全部来自索引</div>
+</div>
+
+<pre><code><span class="c-com">你：</span>我改了 include/fmt/format.h 里 format_to 的函数体，会影响什么？
+
+<span class="c-com">AI：</span>（调 impact_of_change，symbol=format_to）</code></pre>
+
+<pre><code>影响面：format_to
+起点  cpp.sym.format_to  [implementation]  format_to
+
+[确定影响]  0 条
+
+[很可能影响]  54 条
+  &lt;mechanism&gt; 9
+    cpp.mod.core      core 模块
+    cpp.mod.format    format 模块
+    ...
+  &lt;verification&gt; 45
+    cpp.tst.base_test.format_to
+    cpp.tst.format_test.format_int
+    ...
+
+[可能影响]  14 条
+  &lt;intent&gt; 14
+    cpp.cap.Format API
+    cpp.cap.Core API
+
+路径：format_to ←exercises← base_test.format_to ←verified_by← core 模块</code></pre>
+
+<p><b>AI 应该这样转述</b>（这就是它该给你的回答，不是它实际会自由发挥的版本）：</p>
+
+<pre><code>改了 format_to 函数体，影响面分三档：
+
+· 确定影响 0 条 —— 当前没接覆盖率报告，所以用例→代码这层全是静态匹配，
+  进不了确定档。这是已知限制，不是「没问题」。
+· 很可能影响 54 条 —— 9 个模块 + 45 个用例，其中直接相关的是
+  base_test.format_to、format_test.format_int 等 45 个用例。
+· 可能影响 14 条 —— 上层能力，说明 format_to 是公共 API 的一部分。
+
+必跑测试建议（前三个最关键）：
+  ./build/test/base-test --gtest_filter=base_test.format_to
+  ./build/test/format-test --gtest_filter=format_test.format_int
+  ...
+
+结论：这是公共 API 的内部实现改动，影响面在用例层铺得比较开，
+建议至少跑 base-test 与 format-test 两个二进制。
+</code></pre>
+
+<h3>4.4 多人共用的四条硬约束</h3>
+
+<p>
+「多人连同一个服务端」听着简单，实际会踩四个坑。这套实现在代码层面各自做了处理：
+</p>
+
+<table>
+  <thead><tr><th style="width:120px">约束</th><th style="width:290px">实现</th><th>为什么必须这样</th></tr></thead>
+  <tbody>
+    <tr><td><b>查询不可能写坏库</b></td>
+        <td>服务端用 <code>mode=ro</code> 打开索引，并设 <code>PRAGMA query_only</code></td>
+        <td>靠调用方自觉是挡不住的。文件层只读 + 连接层只读，双保险，
+            即使工具实现里误写了 INSERT 也会被 SQLite 直接拒绝</td></tr>
+    <tr><td><b>重编不留空窗</b></td>
+        <td>整个重建在一个事务里：DELETE + INSERT 一起提交</td>
+        <td>否则重编的几十毫秒里有人来查，会拿到「0 个节点」，
+            然后开始怀疑库坏了</td></tr>
+    <tr><td><b>坏卡片不拖垮共享库</b></td>
+        <td>编译有错误就整体 <code>ROLLBACK</code></td>
+        <td>一个人写错一张卡，不该让全组的库变成半成品。
+            他的编译失败，别人继续查上一版</td></tr>
+    <tr><td><b>重编后不用重启服务</b></td>
+        <td>每个请求开一个只读连接，用完即关</td>
+        <td>常驻连接会一直抓着旧的索引文件句柄，
+            重建完还在返回一个月前的数据，且没人会想到要重启</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <span class="t">鉴权做到什么程度够用</span>
+  内网团队用 <b>Bearer token</b> 足够：它的作用不是防攻击，而是防「隔壁组误连了你的库、
+  拿着别人的结论去评审」。真要按人分权限，再在前面挂一层反向代理做 SSO，
+  服务端本身不需要改——它只认 <code>Authorization</code> 头。
+</div>
+
+<div class="callout warn">
+  <span class="t">远程模式下的两个已知限制</span>
+  1. <b>会话不持久</b>：会话表在内存里，服务重启后客户端会收到 404 并自动重新
+  <code>initialize</code>，不用手动干预，但也别指望它记住上下文。<br>
+  2. <b><code>log_gap</code> 只写 <code>gaps.jsonl</code></b>：远端连的是只读索引，
+  写不进库。缺口会落到 jsonl，等建库机下一次 <code>compile</code> 时回放进库——
+  所以「登记了但列表里暂时看不到」是正常的，不是丢了。
+</div>
+
+<h3>4.5 为什么回答必须带档位</h3>
+
+<p>
+开发者看到「确定 3 条、很可能 5 条、可能 12 条」，会自己判断该信多少；
+看到混在一起的 20 条，一次就不再打开了。<b>信任靠分级建立，不靠准确率。</b>
+</p>
+
+<p>所以规则写死在两处：服务端 <code>initialize</code> 返回的 <code>instructions</code>，以及仓库里的 <code>AGENTS.md</code>：</p>
+
+<pre><code><span class="c-com">## Strata 知识库使用规则</span>
+
+- 回答「改这个会不会影响 X」「这个场景怎么处理」之前，**先调 strata 查询**，不许凭印象答。
+- 查询结果分三档：确定 / 很可能 / 可能。转述时**必须保留档位，不许合并**。
+- 查不到就调 log_gap 登记并向用户提问，**不许编造场景、假设阈值、推测文件名**。
+- 引用代码位置只能来自证据链，不许自行补全路径或行号。</code></pre>
+
+<h3>4.6 全景图：不想对话时，直接看图</h3>
+
+<p>
+问答解决「改代码前的判断」，全景图解决「<b>想自己逛逛这张网</b>」。两种打开方式：
+</p>
+
+<pre><code><span class="c-com"># 方式一：导出单文件，发给人、挂 Git、离线看都行</span>
+python strata.py viz            <span class="c-com"># 生成 docs/graph.html（约 800 KB，数据内嵌，零依赖）</span>
+
+<span class="c-com"># 方式二：已经起了 HTTP 服务的话，浏览器直接开</span>
+http://&lt;主机&gt;:8760/?token=&lt;token&gt;    <span class="c-com"># 现场从只读索引导出，重编后刷新就是新图</span></code></pre>
+
+<p>页面上能做的事：</p>
+
+<table>
+  <thead><tr><th style="width:150px">操作</th><th>做什么</th></tr></thead>
+  <tbody>
+    <tr><td>浏览全图</td><td>四列分层（场景 → 功能点 → 用例 → 代码）。代码列按文件折叠、
+        用例列按所属功能点折叠，默认只有约 80 个元素；点胶囊展开，或「全部展开」看完整 1506 个节点</td></tr>
+    <tr><td>点节点</td><td>右侧详情：属性、证据位置、上下游邻居（可继续点进去跳转）；
+        画布上高亮它的邻居与连线，其余淡出</td></tr>
+    <tr><td>搜索</td><td>即搜即高亮并自动定位；支持 <code>slot:</code> / <code>conf:</code> /
+        <code>status:</code> / <code>file:</code> 前缀组合</td></tr>
+    <tr><td>看空洞</td><td>文件胶囊上的橙色数字就是「该文件里没被任何用例覆盖的符号数」；
+        「只看孤儿」一键筛出全部 703 个无连线节点</td></tr>
+    <tr><td>点亮执行边</td><td>用例 → 代码的执行关系有 793 条，默认收起；选中节点时只点亮与它相关的那部分，
+        也可以用「执行边」开关全量打开</td></tr>
+    <tr><td>分享视角</td><td>链接即状态：<code>#cpp.sym.format_to</code> 直达某个节点，
+        <code>#q=chrono</code> 直达一次搜索，<code>?theme=dark</code> 锁深色</td></tr>
+  </tbody>
+</table>
+
+<p>
+两个取舍说明：<b>执行边默认收起</b>——793 条执行关系聚合并画出来就是一张糊掉的网，藏起来之后
+「结构归结构、命中归命中」，选中谁才点亮谁；<b>普通关键字不搜文件名</b>——否则搜一次
+chrono 会把 <code>chrono.h</code> 里 144 个符号全部拽进结果，视图被撑到看不清，找文件请用
+<code>file:</code> 前缀。
+</p>
+
+<h2>5 · 边界</h2>
+
+<table>
+  <thead><tr><th style="width:240px">能力</th><th style="width:80px">状态</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>改代码 → 受影响用例/功能点/场景</td><td><span class="tag t-certain">可用</span></td><td>按行范围定位，三档如实标注</td></tr>
+    <tr><td>能力 → 覆盖的用例与代码</td><td><span class="tag t-certain">可用</span></td><td>反查，用于写测试计划与评审</td></tr>
+    <tr><td>六类空洞 + 缺口账本</td><td><span class="tag t-certain">可用</span></td><td>健康度可量化，补全有闭环</td></tr>
+    <tr><td>OpenCode skill + 七条命令</td><td><span class="tag t-certain">可用</span></td><td><code>/strata-build</code> 一条走完主线，每步收尾自动给下一步</td></tr>
+    <tr><td>一份索引全组共用</td><td><span class="tag t-certain">可用</span></td><td>HTTP MCP + token，只读索引，重编对读者原子</td></tr>
+    <tr><td>用例 → 符号升到「确定」</td><td><span class="tag t-likely">待补</span></td><td>需要覆盖率报告（lcov / JaCoCo）</td></tr>
+    <tr><td>跨仓/跨组件依赖传播</td><td><span class="tag t-likely">待补</span></td><td>需要 ELF 符号交叉或契约声明</td></tr>
+    <tr><td>函数级调用图</td><td><span class="tag t-likely">待补</span></td><td>需要编译数据库；跨 so 本来就断</td></tr>
+    <tr><td>运行时真实链路</td><td><span class="tag t-possible">未做</span></td><td>需要 APM / 调用链数据</td></tr>
+  </tbody>
+</table>
+
+<h3>演进顺序</h3>
+
+<table>
+  <thead><tr><th style="width:58px">阶段</th><th>加什么</th><th>解锁</th><th>验收</th></tr></thead>
+  <tbody>
+    <tr><td><b>P0</b></td><td>已有：抽取 + 编译 + 七条命令 + MCP（stdio / HTTP）</td>
+        <td>本仓构建、影响面查询、全组共用一份库</td><td>已达成</td></tr>
+    <tr><td><b>P1</b></td><td>覆盖率接入</td><td>「很可能」升「确定」</td><td>H3 从 27% 降到 5% 以内</td></tr>
+    <tr><td><b>P2</b></td><td>ELF 符号交叉</td><td>跨组件/跨仓影响面</td><td>改导出符号能定位到依赖方</td></tr>
+    <tr><td><b>P3</b></td><td>按人 ACL + 审计落盘</td><td>精细授权与追责</td><td>3–5 人真实使用，误报有闭环</td></tr>
+    <tr><td><b>P4</b></td><td>双通道自校验</td><td>图谱自己变准</td><td>图预测 vs 实际测试结果周报</td></tr>
+  </tbody>
+</table>
+
+<div class="callout key">
+  <span class="t">P4 最值得做，也最容易被跳过</span>
+  图预测「这次改动会影响 T1/T2」，实际跑测试只挂了 T3。这个差异就是图谱的修正信号：
+  图说有影响但测试全过 → 边可能过期；图说无影响但测试挂了 → 漏边。
+  做成每周报表，图谱才会自己长准；不做，它只会越用越旧。
+</div>
+
+<h2>附录 A · fmt 上的实测数据</h2>
+
+<table>
+  <thead><tr><th style="width:170px">项</th><th>结果</th></tr></thead>
+  <tbody>
+    <tr><td>对象</td><td>fmtlib/fmt，73 个 C++ 文件 / 70760 行 / 30 个测试文件</td></tr>
+    <tr><td>抽取耗时</td><td>5.5 秒</td></tr>
+    <tr><td>节点</td><td><b>1506</b>（implementation 776 / verification 683 / intent 31 / mechanism 16）</td></tr>
+    <tr><td>边</td><td><b>1823</b>（verified_by 1010 / exercises 793 / composed_of 20）</td></tr>
+    <tr><td>校验</td><td>零错误、零警告</td></tr>
+    <tr><td>空洞</td><td>203 处（H1 16 / H2 1 / H3 186）</td></tr>
+    <tr><td>H3 占比</td><td>186 / 683 = <b>27.2%</b>，静态匹配的召回上限</td></tr>
+    <tr><td>同名符号</td><td><code>format_to</code> 合并为 1 个节点，<code>locations</code> 记录 12 处、跨 5 个文件</td></tr>
+    <tr><td>行级定位</td><td>改 <code>format.h:4687</code> → 命中 3 个符号（含行范围重叠的 2 个）→ 45 用例 + 9 模块</td></tr>
+    <tr><td>证据复核</td><td>卡片标 <code>test/core-test.cc:698</code>，源码第 698 行确为 <code>TEST(base_test, format_to) {</code></td></tr>
+  </tbody>
+</table>
+
+<h2>附录 B · 故障排查</h2>
+
+<table>
+  <thead><tr><th style="width:260px">现象</th><th>原因</th><th>处理</th></tr></thead>
+  <tbody>
+    <tr><td>报「还没指定知识库工程在哪」</td><td>四种定位方式都没命中</td>
+        <td>命令带 <code>--home &lt;路径&gt;</code>，或跑一次 <code>home set &lt;路径&gt;</code> 写进本仓配置</td></tr>
+    <tr><td><code>home</code> 显示「最终生效」指向旧目录</td><td>仓内配置或环境变量过期了</td>
+        <td><code>home set</code> 覆盖一次；命令带 <code>--home</code> 优先级最高，可临时压掉</td></tr>
+    <tr><td>远端连不上（连接拒绝）</td><td>服务端只监听 127.0.0.1，或端口没开</td>
+        <td>起服务时加 <code>--host 0.0.0.0</code>，确认端口；先 <code>curl /healthz</code></td></tr>
+    <tr><td>远端返回 401</td><td>服务端设了 <code>--token</code>，客户端没带或带错</td>
+        <td>配置里加 <code>"Authorization": "Bearer &lt;token&gt;"</code></td></tr>
+    <tr><td>远端返回 404 session expired</td><td>服务端重启过，内存里的会话没了</td>
+        <td>正常现象，客户端会自动重新 <code>initialize</code>；不恢复就重启客户端</td></tr>
+    <tr><td><code>log_gap</code> 登记了但列表里看不到</td><td>远端是只读索引，缺口只落了 <code>gaps.jsonl</code></td>
+        <td>正常，建库机下次 <code>compile</code> 会回放进库</td></tr>
+    <tr><td>报「这是 Strata 工程自身」</td><td>在 skill 工程里跑了 <code>extract .</code></td><td>cd 到被分析的代码仓再执行</td></tr>
+    <tr><td><code>compile</code> 报悬空 link</td><td>改了卡片 id 没改引用</td><td>按报错 id 全局搜，改引用或补卡片</td></tr>
+    <tr><td>节点数少于卡片数</td><td>Windows 大小写不敏感，文件名相撞</td><td>id 生成时已统一小写</td></tr>
+    <tr><td>查询结果为空</td><td>符号名不唯一，或被 <code>draft</code> 挡住</td><td>用完整 id 查；检查 <code>status</code></td></tr>
+    <tr><td>全是「很可能」没有「确定」</td><td>没接覆盖率</td><td>正常，接 lcov 才会亮</td></tr>
+    <tr><td><code>impact-diff</code> 说不在 git 仓库</td><td>当前目录不是仓库根</td><td>在仓库内执行，或用 <code>impact &lt;符号&gt;</code></td></tr>
+    <tr><td>改动只落到「文件级回退」</td><td>改的是宏、注释或 include</td><td>正常，只能定位到模块，不能到函数</td></tr>
+  </tbody>
+</table>
+
+<h2>附录 C · 名词对照</h2>
+
+<table>
+  <thead><tr><th style="width:150px">本文用词</th><th>对应常见说法</th><th>为什么用这个词</th></tr></thead>
+  <tbody>
+    <tr><td>意图 intent</td><td>场景、功能</td><td>「场景」在别的领域叫「能力」「需求」，槽位要装下所有说法</td></tr>
+    <tr><td>功能 mechanism</td><td>功能点 / 功能模块</td><td>字段名沿用 <code>mechanism</code>，中文统一叫<b>功能层</b>。一个场景由多个功能点组成；具体形态（状态机、服务序列、命令集）由领域包定义</td></tr>
+    <tr><td>验证 verification</td><td>IT / UT 用例</td><td>不按框架分：gtest、pytest、诊断脚本、HIL 都是 IT/UT 的载体，分框架等于把工具链焊进模型</td></tr>
+    <tr><td>实现 implementation</td><td>代码</td><td>代码是形态之一，还可能是配置、脚本、二进制符号</td></tr>
+    <tr><td>槽位 slot</td><td>层</td><td>强调它是语义角色，名字由领域包决定</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  Strata v0.2 · 文档与代码同仓（<code>docs/architecture.html</code>）·
+  文中数字均来自 fmtlib/fmt 上的实际运行结果，可复现
+</footer>
+
+</div>
+</body>
+</html>

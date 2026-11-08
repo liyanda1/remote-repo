@@ -1,0 +1,89 @@
+# kb/domains/uds-flash/domain.yaml
+# 诊断刷写领域包。与 ota 包共用同一个内核，只是 mechanism 换了形态。
+# mechanism 层的形态 = UDS 诊断服务序列
+
+id: uds-flash
+name: 诊断刷写
+version: 1
+extends: core
+
+slots:
+  intent:
+    label: 刷写场景
+    id_prefix: uds.scn
+    fields:
+      title: { type: str, required: true }
+      entry: { type: enum, values: [diagnostic_tester, ota_triggered, factory] }
+      recoverable: { type: bool }
+  mechanism:
+    label: 诊断服务序列
+    id_prefix: uds.svc
+    key: [sequence_no, service]
+    fields:
+      sequence_no: { type: int, required: true }
+      service: { type: str, required: true }    # 0x10 / 0x27 / 0x31 / 0x34 / 0x36 / 0x37
+      sub_function: { type: str }
+      session: { type: str }                    # 默认会话 / 扩展会话 / 编程会话
+      security_level: { type: str }
+      pre_condition: { type: str }
+      expected_nrc: { type: list }
+  verification:
+    label: 诊断测试用例
+    id_prefix: uds.test
+    fields:
+      kind: { type: enum, values: [UT, IT, HIL] }
+      ecu_target: { type: str }
+  implementation:
+    label: 代码符号
+    id_prefix: uds.sym
+
+extractors:
+  - name: uds_sequence
+    kind: pack
+    input: ["**/*.cpp", "**/*.h"]
+    rule: |
+      1. 识别 UDS 服务调用点（0x10/0x27/0x31/0x34/0x36/0x37 常量或宏）
+      2. 按调用顺序串成序列，同一函数内连续调用视为一个 mechanism 序列
+      3. 提取前置的会话切换与安全访问等级作为 pre_condition
+    emits: [mechanism]
+  - name: gtest
+    kind: core
+    emits: [verification]
+  - name: lcov
+    kind: core
+    emits: ["verification->implementation"]
+  - name: elf
+    kind: core
+    emits: [implementation, "implementation->implementation"]
+
+contracts:
+  - id: uds-service-table
+    kind: doc-table
+    path: contracts/uds/services.md
+    note: 支持的服务与子功能清单
+  - id: ecu-flash-spec
+    kind: pdf-snapshot
+    path: contracts/ecu/*.md
+    note: 供应商刷写规范摘要，用于核对时序与超时
+
+elicitation:
+  - hole: H2-unverified-mechanism
+    ask: |
+      诊断序列第 {sequence_no} 步（服务 {service}，会话 {session}）没有测试用例。
+      1) 正常情况下 ECU 返回什么？
+      2) 失败时返回哪个 NRC？
+      3) 这一步失败是否可以回退到上一步？
+  - hole: H1-orphan-intent
+    ask: |
+      刷写场景「{title}」没有找到对应的诊断服务序列。
+      1) 它从哪个服务开始（0x10 会话切换？还是 0x31 例程）？
+      2) 是整包刷写还是差分包？
+  - hole: H6-conflict
+    ask: |
+      服务 {service} 在文档里标注的 NRC 是 {nrc_doc}，代码里的处理是 {nrc_code}。
+      以哪个为准？这是文档滞后还是代码缺陷？
+
+validators:
+  - service 必须是 0x10-0x3E 范围内的 UDS 服务号
+  - 进入 0x34 之前必须存在 0x10 到编程会话、0x27 通过安全访问的边
+  - 序列内 sequence_no 不允许跳号

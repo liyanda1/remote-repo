@@ -1,0 +1,103 @@
+# strata/core/schema.yaml
+# 知识库内核元模型 —— 领域无关。新增领域不改这个文件。
+# 领域包只做一件事：把本领域的实体映射到下面四个槽位。
+
+version: 1
+
+# ---------------------------------------------------------------- 四个语义槽位
+# 槽位是"语义角色"，不是具体形态。叫什么、装什么，由领域包决定。
+slots:
+  intent:
+    role: 人想达成什么（场景 / 用例 / 需求）
+    scale: 十到百
+    mutability: 低频，人工维护
+  mechanism:
+    role: 一个场景由哪几个功能点实现（1:N，本领域的中层形态）
+    scale: 百到千
+    mutability: 中频，部分可从代码抽取
+  verification:
+    role: 如何证明它成立（IT / UT；不区分测试框架）
+    scale: 千
+    mutability: 高频，随代码变
+  implementation:
+    role: 代码实体（符号 / 组件）
+    scale: 万到百万
+    mutability: 最高频，机器生成
+
+# ---------------------------------------------------------------- 边类型
+# 只允许这五种，跨领域统一。新增边类型属于改内核，需要评审。
+edges:
+  - name: composed_of        # intent -> mechanism  一个意图由哪几个功能点拼成
+    from: intent
+    to: mechanism
+    attr: [weight]           # weight 表示覆盖程度，允许部分覆盖
+  - name: verified_by        # mechanism -> verification
+    from: mechanism
+    to: verification
+  - name: exercises          # verification -> implementation
+    from: verification
+    to: implementation
+  - name: depends_on         # implementation -> implementation
+    from: implementation
+    to: implementation
+  - name: fulfills           # intent -> intent  跨领域串联（如 整车升级 -> OTA / 诊断刷写）
+    from: intent
+    to: intent
+
+# ---------------------------------------------------------------- 证据账本
+# 任何边入库必须带 provenance，否则拒绝写入。这是整套系统可信度的地基。
+provenance:
+  required: true
+  fields:
+    source_type: [extractor, manual, user-answer, llm-proposal]
+    source_ref: "file:line | report-id | conversation-id | yaml-path"
+    confidence: [certain, likely, possible]
+    created_at: iso8601
+    verified_by: string?
+
+# 来源与置信度的默认对应，写入时若未显式指定则取此值
+confidence_policy:
+  extractor:   { static-analysis: certain, heuristic: likely }
+  user-answer: likely
+  llm-proposal: possible
+  manual:      certain
+
+# ---------------------------------------------------------------- 空洞规则
+# 补全的通用引擎：只检测这六类结构空洞，问法由领域包提供。
+holes:
+  - id: H1-orphan-intent
+    desc: 意图节点没有任何功能点实现它
+    detect: intent 出度 == 0
+    severity: high
+  - id: H2-unverified-mechanism
+    desc: 功能点没有对应的验证用例
+    detect: mechanism 无 verified_by 出边
+    severity: high
+  - id: H3-unmapped-verification
+    desc: 用例没有映射到任何代码
+    detect: verification 无 exercises 出边
+    severity: medium
+  - id: H4-unsourced-edge
+    desc: 边缺少 provenance
+    detect: edge.provenance 为空
+    severity: critical
+  - id: H5-single-path
+    desc: 关键功能点只有单一入口，脆弱
+    detect: mechanism 入度 == 1 且 weight < 0.5
+    severity: low
+  - id: H6-conflict
+    desc: 同一对节点的两条边置信度矛盾
+    detect: 同 (from,to,type) 存在 confidence 不同的多条边
+    severity: high
+
+# ---------------------------------------------------------------- 查询接口
+# MCP 对外暴露的语义化工具，固定这套，不暴露裸图查询。
+tools:
+  - impact_of_change   # 改代码 -> 按三档返回受影响的 verification / mechanism / intent
+  - coverage_of_intent # 意图 -> 覆盖到的 mechanism 与 implementation
+  - find_holes         # 按 holes 规则扫描，产出待补清单
+  - explain_edge       # 任意边 -> provenance 全链路
+  - graph_stats        # 各槽位节点数、各置信度边占比、空洞数
+  - log_gap            # 查不到时登记缺口，禁止编造答案
+  # 说明：补洞的「问法」由 pack.elicitation 提供，内核只负责登记（log_gap）
+  # 与回写（改卡片后 compile），因此不单独设 ask_fill / answer_fill 工具。

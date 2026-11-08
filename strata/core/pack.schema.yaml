@@ -1,0 +1,101 @@
+# strata/core/pack.schema.yaml
+# 领域包契约 —— Strata「通用性」的边界就是这份文件。
+#
+# 写一个领域包的人只需要读这份文件，不需要读内核代码，也不需要改 core/ 下任何一行。
+# core/ 里不允许出现任何具体领域的词、字段名或枚举值。
+
+pack:
+  version: 1
+  extends: core            # 固定值，不允许继承其他 pack
+
+  required_fields: [id, name, version, slots, mechanism_key]
+  optional_fields: [extractors, elicitation, validators, contracts, docs]
+
+  id:
+    type: string
+    pattern: "^[a-z][a-z0-9-]{1,31}$"
+    note: 全局唯一，安装时冲突直接拒绝
+  name:
+    type: string
+    note: 展示名，允许非 ASCII
+
+# ---------------------------------------------------------------- 槽位映射
+# 四个槽位必须全部映射，不允许省略。槽位名固定，label 由 pack 自由命名。
+slots:
+  required: [intent, mechanism, verification, implementation]
+  each:
+    label: string          # 本领域里这一层叫什么，显示用
+    id_prefix: string      # 如 "abc.scn"，用于生成全局唯一 id
+    fields:                # 除 id/status/confidence/source 之外的业务字段
+      <field_name>:
+        type: str | int | bool | enum | list | path | ref
+        values: []         # type=enum 时必填
+        required: bool
+
+# ---------------------------------------------------------------- 功能唯一键（mechanism_key）
+mechanism_key:
+  type: array              # 1~3 个字段名，必须是 slots.mechanism.fields 的子集
+  rule: 同一组 key 值只允许存在一个 mechanism 节点，重复写入按合并处理
+  note: |
+    这是整个 pack 最重要的一个字段。它决定了「什么算一个功能点」，
+    进而决定图的结构、去重策略、影响面传播的粒度。
+    写包的第一步就是定它，定错了后面全部白写。
+
+# ---------------------------------------------------------------- 抽取器
+extractors:
+  type: array
+  item:
+    name: string
+    kind: core | pack      # core 表示复用内核自带的四个，pack 表示本领域专有
+    input: [glob]          # 相对仓库根目录
+    rule: string           # 用自然语言写清判定规则，实现时照它写，便于复核
+    emits: [slot_name | "from->to"]
+    confidence: certain | likely | possible   # 本抽取器产出的边默认置信度
+
+# 内核自带的四个抽取器，所有 pack 可直接引用，不必重写
+builtin_extractors:
+  - name: gtest            # 测试用例 -> verification
+  - name: coverage         # 覆盖率报告 -> verification->implementation
+  - name: elf              # 构建产物 -> implementation / implementation->implementation
+  - name: git              # 提交与变更 -> implementation->implementation
+
+# ---------------------------------------------------------------- 补洞问法
+# 内核负责扫空洞（规则固定），pack 只负责把空洞翻译成本领域的问法。
+elicitation:
+  type: array
+  item:
+    hole: string           # 必须来自 core/schema.yaml 的 holes[].id，不允许自定义
+    ask: string            # 支持 {field} 占位，取值来自节点属性
+    expect: string         # 期望答复落到哪个字段，便于自动写回
+  note: 未提供模板的空洞，走内核默认问法。
+
+# ---------------------------------------------------------------- 领域校验
+validators:
+  type: array
+  item: string             # 一条一句话，能被翻译成 SQL 断言或 Python 校验函数
+  examples_of_shape:
+    - "字段 A 的取值必须出现在字段 B 已声明的集合里"
+    - "节点 C 必须至少有一条入边"
+    - "序列号不允许跳号"
+
+# ---------------------------------------------------------------- 对外契约
+# 本领域与上下游之间的接口快照。用于建立跨仓库的影响面边。
+contracts:
+  type: array
+  item:
+    id: string
+    kind: enum [json-schema, c-header, idl, doc-table]
+    path: glob
+    note: string
+
+# ---------------------------------------------------------------- 边界判定
+# 拿不准一条规则该放 core 还是 pack 时，用这两问：
+decision_rules:
+  - 改这条规则，会影响两个以上领域吗？会 -> core（需评审）
+  - 只会影响一个领域吗？                -> pack（自由修改，无需联调）
+
+# ---------------------------------------------------------------- 验收
+acceptance:
+  - 新 pack 接入不得修改 core/ 下任何文件
+  - pack 自带一个可跑的最小样例数据，安装后能通过校验
+  - 未知字段一律报错而非忽略，避免拼写错误静默失效

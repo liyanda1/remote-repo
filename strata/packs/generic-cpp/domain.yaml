@@ -1,0 +1,94 @@
+id: generic-cpp
+name: 通用 C++ 代码库
+version: 1
+extends: core
+
+# 这个包面向「任意一个 C++ 仓库」，不含任何公司或业务词。
+# 它演示的是降级路径：没有编译数据库、没有覆盖率报告，只靠源码静态扫描能建到什么程度。
+
+slots:
+  intent:
+    label: 能力
+    id_prefix: cpp.cap
+    fields:
+      heading: { type: str }
+  mechanism:
+    label: 模块
+    id_prefix: cpp.mod
+    fields:
+      module: { type: str }
+      header: { type: path }
+  verification:
+    label: 测试用例
+    id_prefix: cpp.tst
+    fields:
+      suite: { type: str }
+      case: { type: str }
+      file: { type: path }
+      line: { type: int }
+  implementation:
+    label: 符号
+    id_prefix: cpp.sym
+    fields:
+      name: { type: str }
+      kind: { type: enum, values: [class, struct, function, method] }
+      file: { type: path }
+      line: { type: int }
+      line_end: { type: int }   # 符号体的结束行，供按行范围定位改动点
+      locations: { type: list } # 同名符号的全部出现位置（声明 + 各文件定义）
+
+mechanism_key: [module]
+
+extractors:
+  - name: cpp_modules
+    kind: pack
+    input: ["include/**/*.h", "include/**/*.hpp"]
+    rule: 每个公共头文件视为一个机制（模块），模块名取文件名主干
+    emits: [mechanism]
+    confidence: certain
+  - name: cpp_symbols
+    kind: pack
+    input: ["include/**/*.h", "src/**/*.cc"]
+    rule: 抽取 class/struct 与函数声明、类外定义，作为代码符号
+    emits: [implementation]
+    confidence: certain
+  - name: gtest
+    kind: core
+    input: ["test/**/*.cc", "**/test_*.cc", "**/*_test.cc"]
+    rule: 解析 TEST / TEST_F / TEST_P 宏，一个宏一个用例
+    emits: [verification]
+    confidence: certain
+  - name: include_relation
+    kind: pack
+    input: ["test/**/*.cc"]
+    rule: 用例文件 include 了某模块头文件，则该模块由该用例验证
+    emits: ["mechanism->verification"]
+    confidence: likely
+  - name: call_relation
+    kind: pack
+    input: ["test/**/*.cc"]
+    rule: 用例体内出现的调用标识符与符号表求交，命中即视为覆盖
+    emits: ["verification->implementation"]
+    confidence: likely
+
+elicitation:
+  - hole: H3-unmapped-verification
+    ask: |
+      用例 {suite}.{case} 没有映射到任何代码符号。
+      1) 它测的是哪个函数或类？
+      2) 如果只是断言宏组合，可以标记为「无被测符号」。
+  - hole: H2-unverified-mechanism
+    ask: |
+      模块 {module} 没有任何测试用例覆盖。
+      1) 是没有测试，还是测试在别的仓库？
+      2) 如果有测试，文件在哪？
+  - hole: H1-orphan-intent
+    ask: |
+      能力「{heading}」没有对应到任何模块。
+      1) 它由哪个模块实现？
+      2) 还是说这只是一个说明性章节，不该建卡？
+
+validators:
+  - 每个 verification 的 file 必须真实存在
+  - 每个 implementation 的 name 不允许为空
+  - mechanism 的 module 名不允许重复

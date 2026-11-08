@@ -1,0 +1,98 @@
+# kb/domains/ota/domain.yaml
+# OTA 升级领域包。只做映射与抽取，不改内核。
+# mechanism 层的形态 = 状态机的 (state, event, guard) 三元组
+
+id: ota
+name: OTA 升级
+version: 1
+extends: core
+
+slots:
+  intent:
+    label: 升级场景
+    id_prefix: ota.scn
+    fields:
+      title: { type: str, required: true }
+      vehicle_state: { type: enum, values: [parked, driving, powered_off, charging] }
+      trigger_desc: { type: str }
+  mechanism:
+    label: 状态机转移
+    id_prefix: ota.st
+    key: [state, event]          # 唯一键：一个状态下收到一个事件只走一条转移
+    fields:
+      state: { type: str, required: true }
+      event: { type: str, required: true }
+      guard: { type: str }       # 守卫条件，影响面分析的核心抓手
+      action: { type: str }
+      next_state: { type: str }
+  verification:
+    label: IT / UT
+    id_prefix: ota.test
+    fields:
+      kind: { type: enum, values: [UT, IT] }
+      file: { type: path }
+  implementation:
+    label: 代码符号
+    id_prefix: ota.sym
+
+# 抽取器：core 的跨领域复用，pack 的是本领域专有
+extractors:
+  - name: state_machine
+    kind: pack
+    input: ["**/*.cpp", "**/*.h"]
+    rule: |
+      1. 定位 enum class .*State / OtaState 的所有枚举值 -> 状态集合
+      2. 定位转移表（数组/字典/switch-case）-> (state, event, guard, next)
+      3. 守卫条件取 if 表达式的字符串形式，保留原始代码便于人工核对
+    emits: [mechanism]
+  - name: gtest
+    kind: core
+    rule: 解析 TEST / TEST_F / TEST_P 与 fixture
+    emits: [verification]
+  - name: lcov
+    kind: core
+    rule: 每个测例单独跑，一份 .info -> FN/DA 记录映射到符号
+    emits: ["verification->implementation"]
+  - name: elf
+    kind: core
+    rule: nm -D / readelf -d，建立符号归属与 so 间依赖
+    emits: [implementation, "implementation->implementation"]
+  - name: commit
+    kind: core
+    rule: git diff + AST 定位改动符号
+    emits: ["implementation->implementation"]
+
+# 边界条件：本领域独有的对外契约，不进内核
+contracts:
+  - id: cloud-protocol
+    kind: json-schema
+    path: contracts/cloud/*.json
+    note: 上游 OTA 云平台下发与上报的字段定义
+  - id: platform-api
+    kind: c-header
+    path: contracts/platform/*.h
+    note: 下游刷写引擎、诊断栈的 C API 快照
+
+# 提问模板：内核检测到空洞后，用这里的措辞去问人
+elicitation:
+  - hole: H2-unverified-mechanism
+    ask: |
+      状态 {state} 收到事件 {event}（守卫：{guard}）没有对应测试用例。
+      1) 这条转移是否可达？
+      2) 什么外部条件能触发它？
+      3) 期望的动作与上报码是什么？
+  - hole: H1-orphan-intent
+    ask: |
+      场景「{title}」没有找到实现它的状态机转移。
+      1) 它由哪个 (state, event) 处理？
+      2) 大概在哪个模块（不知道可留空，后续用 lcov 反查）？
+  - hole: H3-unmapped-verification
+    ask: |
+      用例 {test_id} 没有映射到任何代码符号。
+      1) 它是 UT 还是 IT？
+      2) 被测入口函数叫什么？
+
+validators:
+  - 每个 mechanism 的 state 必须在 enum 中出现过
+  - guard 不允许为空字符串（允许为空值，表示无守卫）
+  - 每个 intent 至少有一条 composed_of 出边
