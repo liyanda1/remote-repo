@@ -62,10 +62,12 @@ code,.mono{font-family:"SF Mono",Consolas,"Cascadia Code",ui-monospace,monospace
 .chip[data-s=mechanism].on{color:#0e7490; background:#ecfeff}
 .chip[data-s=verification].on{color:#b45309; background:#fffbeb}
 .chip[data-s=implementation].on{color:#475569; background:#f1f5f9}
+.chip[data-s=concept].on{color:#047857; background:#ecfdf5}
 [data-theme=dark] .chip[data-s=intent].on{background:#1e1b4b; color:#a5b4fc}
 [data-theme=dark] .chip[data-s=mechanism].on{background:#083344; color:#67e8f9}
 [data-theme=dark] .chip[data-s=verification].on{background:#422006; color:#fcd34d}
 [data-theme=dark] .chip[data-s=implementation].on{background:#1e293b; color:#cbd5e1}
+[data-theme=dark] .chip[data-s=concept].on{background:#022c22; color:#6ee7b7}
 
 .btn{
   height:26px; padding:0 10px; border-radius:7px; border:1px solid var(--line);
@@ -86,9 +88,11 @@ code,.mono{font-family:"SF Mono",Consolas,"Cascadia Code",ui-monospace,monospace
 
 .e.composed_of{stroke:#6366f1} .e.verified_by{stroke:#06b6d4}
 .e.exercises{stroke:#f59e0b} .e.depends_on{stroke:#94a3b8} .e.fulfills{stroke:#a855f7}
+.e.explains{stroke:#10b981} .e.related_to{stroke:#fb7185}
 [data-theme=dark] .e.composed_of{stroke:#818cf8} [data-theme=dark] .e.verified_by{stroke:#22d3ee}
 [data-theme=dark] .e.exercises{stroke:#fbbf24} [data-theme=dark] .e.depends_on{stroke:#64748b}
 [data-theme=dark] .e.fulfills{stroke:#c084fc}
+[data-theme=dark] .e.explains{stroke:#34d399} [data-theme=dark] .e.related_to{stroke:#fda4af}
 
 .colhead{
   position:absolute; display:flex; align-items:baseline; gap:9px; pointer-events:none;
@@ -121,8 +125,10 @@ code,.mono{font-family:"SF Mono",Consolas,"Cascadia Code",ui-monospace,monospace
 }
 .n.intent{--cc:#4f46e5} .n.mechanism{--cc:#0891b2}
 .n.verification{--cc:#d97706} .n.implementation{--cc:#64748b}
+.n.concept{--cc:#059669}
 [data-theme=dark] .n.intent{--cc:#818cf8} [data-theme=dark] .n.mechanism{--cc:#22d3ee}
 [data-theme=dark] .n.verification{--cc:#fbbf24} [data-theme=dark] .n.implementation{--cc:#94a3b8}
+[data-theme=dark] .n.concept{--cc:#34d399}
 
 .n.draft,.n.proposed{border-style:dashed}
 .n.orphan{border-style:dashed; background:transparent}
@@ -154,9 +160,11 @@ code,.mono{font-family:"SF Mono",Consolas,"Cascadia Code",ui-monospace,monospace
 .g .w{font-size:10px; color:#d97706; flex:none; font-variant-numeric:tabular-nums}
 .g.dim{opacity:.16}
 .g.sel{border-color:var(--cc); box-shadow:0 0 0 2px color-mix(in srgb,var(--cc) 28%,transparent)}
-.g.member{--cc:#94a3b8; border-left-width:1px; background:transparent; box-shadow:none; cursor:default}
-.g.member .t{font-weight:400; color:var(--muted); font-size:11px}
-.g.member:hover{transform:none}
+.g.child{--cc:#94a3b8; border-left-width:2px; margin-left:14px; width:calc(100% - 14px)}
+.g.child .t{font-weight:500; font-size:11px}
+.g.concept{--cc:#059669} .g.intent{--cc:#4f46e5} .g.mechanism{--cc:#0891b2}
+.g.verification{--cc:#d97706} .g.implementation{--cc:#64748b}
+[data-theme=dark] .g.concept{--cc:#34d399}
 
 /* ---------------- 详情抽屉 ---------------- */
 #panel{
@@ -174,10 +182,12 @@ code,.mono{font-family:"SF Mono",Consolas,"Cascadia Code",ui-monospace,monospace
 }
 .tag.intent{background:#eef2ff; color:#4338ca} .tag.mechanism{background:#ecfeff; color:#0e7490}
 .tag.verification{background:#fffbeb; color:#b45309} .tag.implementation{background:#f1f5f9; color:#475569}
+.tag.concept{background:#ecfdf5; color:#047857}
 [data-theme=dark] .tag.intent{background:#1e1b4b; color:#a5b4fc}
 [data-theme=dark] .tag.mechanism{background:#083344; color:#67e8f9}
 [data-theme=dark] .tag.verification{background:#422006; color:#fcd34d}
 [data-theme=dark] .tag.implementation{background:#1e293b; color:#cbd5e1}
+[data-theme=dark] .tag.concept{background:#022c22; color:#6ee7b7}
 .tag.c-certain{background:#dcfce7; color:#15803d}
 .tag.c-likely{background:#e0f2fe; color:#0369a1}
 .tag.c-possible{background:#fef3c7; color:#b45309}
@@ -266,15 +276,31 @@ body.panel-open #zoom{right:14px}
   position:fixed; inset:52px 0 0 0; display:none; align-items:center; justify-content:center;
   color:var(--dim); font-size:13px; z-index:20;
 }
+/* 自绘悬浮提示：原生 title 的提示框浮在页面最上层，会挡住下面的节点
+   （Windows 上还可能吞掉第一次点击），所以换成 pointer-events:none 的自绘框，
+   保证永远不会挡住任何内容和点击。 */
+#tip{
+  position:fixed; z-index:45; max-width:340px; pointer-events:none;
+  background:color-mix(in srgb,var(--panel) 96%,transparent); backdrop-filter:blur(8px);
+  border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+  box-shadow:var(--shadow); font-size:11.5px; line-height:1.55; color:var(--muted);
+  opacity:0; transition:opacity .12s;
+}
+#tip.on{opacity:1}
+#tip b{
+  display:block; color:var(--text); font-size:12px; margin-bottom:2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:320px;
+}
+#tip .m{color:var(--dim)}
 </style>
 </head>
 <body>
 
 <header id="bar">
   <div id="brand"><b>Strata</b><span>知识库全景</span></div>
-  <input id="q" placeholder="搜索节点…  支持 slot:mechanism / conf:certain / status:draft">
+  <input id="q" placeholder="搜索节点…  支持 slot:mechanism / conf:certain / status:draft / file:xxx">
   <div class="chips" id="slotchips"></div>
-  <button class="btn" id="execBtn" title="显示用例→代码的执行边（793 条，默认只在选中时显示）">执行边</button>
+  <button class="btn" id="execBtn" title="显示用例→代码的执行边（量大，默认只在选中节点时点亮）">执行边</button>
   <button class="btn" id="orphanBtn" title="只显示没有任何连线的节点">只看孤儿</button>
   <button class="btn" id="expandBtn" title="展开所有折叠组">全部展开</button>
   <button class="btn" id="fitBtn" title="适应窗口 (f)">适应</button>
@@ -312,74 +338,158 @@ body.panel-open #zoom{right:14px}
 const DATA = __STRATA_DATA__;
 const N = DATA.nodes, E = DATA.edges;
 
-const SLOT_CN = {intent:"场景", mechanism:"功能点", verification:"用例", implementation:"代码"};
-const SLOT_ORDER = ["intent","mechanism","verification","implementation"];
+const SLOT_CN = {concept:"概念", intent:"场景", mechanism:"功能点", verification:"用例", implementation:"代码"};
 const EDGE_CN = {
   composed_of:"由…组成", verified_by:"由…验证", exercises:"执行到",
-  depends_on:"依赖", fulfills:"细化"
+  depends_on:"依赖", fulfills:"细化", explains:"解释", related_to:"相关"
 };
+/* conf / status 的中文名：界面展示一律用中文，原始英文值只留给搜索语法 */
+const CONF_CN = {certain:"确定", likely:"很可能", possible:"可能"};
+const ST_CN = {draft:"草稿", proposed:"待审", confirmed:"已确认", disputed:"存疑"};
+/* 展示顺序：概念层在最左（explains 边指向右侧的场景/功能点），主链依次向右 */
+const SLOT_ORDER = ["concept","intent","mechanism","verification","implementation"]
+  .filter(s => N.some(n => n.slot === s));
+const NC = SLOT_ORDER.length;
 
 /* ---------------- 索引 ---------------- */
 const outA = Array.from({length:N.length}, () => []);
 const inA  = Array.from({length:N.length}, () => []);
 E.forEach((e, i) => { outA[e.a].push(i); inA[e.b].push(i); });
 const degOf = i => inA[i].length + outA[i].length;
-
 N.forEach((n, i) => { n.i = i; n.deg = degOf(i); });
-
-/* 连边密度：用于判断「这行值不值得单独看」 */
 const orphanCount = N.filter(n => n.deg === 0).length;
 
-/* ---------------- 分组 ----------------
-   用例：按认领它的功能点分组（verified_by 的源端）
-   代码：按文件分组
-   这样默认视图只有十几个胶囊，而不是 683 行。 */
+/* ---------------- 排名（列内排序用） ---------------- */
+const intentRank = new Map(
+  N.filter(n => n.slot === "intent")
+   .sort((a, b) => (b.deg - a.deg) || a.title.localeCompare(b.title))
+   .map((n, k) => [n.i, k]));
 const mechInDeg = new Map();
-N.forEach((n, i) => { if (n.slot === "mechanism") mechInDeg.set(i, outA[i].filter(e => E[e].t === "verified_by").length); });
+N.forEach((n, i) => { if (n.slot === "mechanism")
+  mechInDeg.set(i, outA[i].filter(e => E[e].t === "verified_by").length); });
+const mechRank = new Map(
+  N.filter(n => n.slot === "mechanism")
+   .sort((a, b) => (mechInDeg.get(b.i) - mechInDeg.get(a.i)) || a.title.localeCompare(b.title))
+   .map((n, k) => [n.i, k]));
 
-const mechSorted = N.filter(n => n.slot === "mechanism")
-  .sort((a, b) => (mechInDeg.get(b.i) - mechInDeg.get(a.i)) || a.title.localeCompare(b.title));
-const mechRank = new Map(mechSorted.map((n, k) => [n.i, k]));
-
-const groups = new Map();   // key -> {key, slot, label, members:[i], rank}
-function groupKeyOf(i) {
-  const n = N[i];
-  if (n.slot === "verification") {
-    const p = inA[i].map(e => E[e]).find(e => e.t === "verified_by");
-    return p ? "v:" + p.a : "v:_none";
-  }
-  return "i:" + (n.file || "（无文件）");
-}
-for (let i = 0; i < N.length; i++) {
-  const n = N[i];
-  if (n.slot !== "verification" && n.slot !== "implementation") continue;
-  const k = groupKeyOf(i);
-  let g = groups.get(k);
-  if (!g) {
-    let label;
-    if (n.slot === "verification") {
-      label = k === "v:_none" ? "未被功能点认领" : N[+k.slice(2)].title;
-    } else {
-      label = n.file || "（无文件）";
-    }
-    g = {key:k, slot:n.slot, label, members:[], rank:1e6};
-    groups.set(k, g);
-  }
-  g.members.push(i);
-}
-/* 组排序：让相邻列的组尽量对齐，减少长距离交叉线 */
-groups.forEach(g => {
-  if (g.slot === "verification") {
-    const p = g.key === "v:_none" ? null : +g.key.slice(2);
-    g.rank = p !== null && mechRank.has(p) ? mechRank.get(p) : 999;
-    g.members.sort((a, b) => N[a].title.localeCompare(N[b].title));
-  }
+/* 父链：verification -> mechanism -> intent */
+const parentMech = new Map(), parentIntent = new Map();
+E.forEach(e => {
+  if (e.t === "verified_by" && N[e.b].slot === "verification") parentMech.set(e.b, e.a);
+  if (e.t === "composed_of" && N[e.b].slot === "mechanism") parentIntent.set(e.b, e.a);
 });
-/* 代码组按文件路径字母序——执行边默认隐藏后，顺序就是给人找文件用的 */
-const fileSorted = [...groups.values()].filter(g => g.slot === "implementation")
-  .sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
-const fileRank = new Map(fileSorted.map((g, k) => [g.key, k]));
-groups.forEach(g => { if (g.slot === "implementation") g.rank = fileRank.get(g.key); });
+
+/* ---------------- 分组树 ----------------
+   大库的关键：列内不是平铺，是一棵可折叠的树。
+   - 功能点超过 40 个 → 按所属场景分组
+   - 用例按功能点分组；功能点组超过 40 个 → 再包一层按场景
+   - 代码按文件分组；文件组超过 40 个 → 再包一层按目录
+   默认全部折叠：2 万节点的库，默认视图也只有几十个胶囊。 */
+const FLAT_CAP = 40, GROUP_CAP = 40;
+const colTrees = new Map();     // slot -> [组树]
+const leafPath = new Map();     // 节点 idx -> 它所有祖先组的 key（搜索/深链时逐层展开）
+const allGroupKeys = [];
+
+function mkGroup(key, label, slot, level) {
+  allGroupKeys.push(key);
+  return {key, label, slot, level, children: [], leaves: [], allLeaves: []};
+}
+function finalize(g) {
+  g.allLeaves = g.leaves.slice();
+  for (const ch of g.children) { finalize(ch); g.allLeaves.push(...ch.allLeaves); }
+}
+
+(function buildTrees() {
+  /* 功能点：按场景分组 */
+  const mechs = N.filter(n => n.slot === "mechanism");
+  if (mechs.length > FLAT_CAP) {
+    const byKey = new Map();
+    for (const m of mechs) {
+      const p = parentIntent.get(m.i);
+      const key = p === undefined ? "m:_" : "m:" + p;
+      let g = byKey.get(key);
+      if (!g) g = mkGroup(key, p === undefined ? "未被场景认领" : N[p].title, "mechanism", 0), byKey.set(key, g);
+      g.leaves.push(m.i); leafPath.set(m.i, [key]);
+    }
+    const entries = [...byKey.values()];
+    const rank = g => g.key === "m:_" ? 9e9 : (intentRank.get(+g.key.slice(2)) ?? 9e8);
+    entries.sort((a, b) => rank(a) - rank(b));
+    entries.forEach(g => g.leaves.sort((a, b) =>
+      (mechRank.get(a) ?? 9e9) - (mechRank.get(b) ?? 9e9) || N[a].title.localeCompare(N[b].title)));
+    entries.forEach(finalize);
+    colTrees.set("mechanism", entries);
+  }
+
+  /* 用例：按功能点分组；功能点太多再按场景包一层 */
+  const tests = N.filter(n => n.slot === "verification");
+  const byMech = new Map();
+  for (const t of tests) {
+    const p = parentMech.get(t.i);
+    const key = p === undefined ? "v:_" : "v:" + p;
+    let g = byMech.get(key);
+    if (!g) g = mkGroup(key, p === undefined ? "未被功能点认领" : N[p].title, "verification", 1), byMech.set(key, g);
+    g.leaves.push(t.i); leafPath.set(t.i, [key]);
+  }
+  byMech.forEach(g => g.leaves.sort((a, b) => N[a].title.localeCompare(N[b].title)));
+  let vEntries = [...byMech.values()];
+  const vRank = g => g.key === "v:_" ? 9e9 : (mechRank.get(+g.key.slice(2)) ?? 9e8);
+  vEntries.sort((a, b) => vRank(a) - vRank(b));
+  if (vEntries.length > GROUP_CAP) {
+    const byIntent = new Map();
+    for (const g of vEntries) {
+      let ik = "vi:_", label = "未被场景认领";
+      if (g.key !== "v:_") {
+        const pi = parentIntent.get(+g.key.slice(2));
+        if (pi !== undefined) { ik = "vi:" + pi; label = N[pi].title; }
+      }
+      let ig = byIntent.get(ik);
+      if (!ig) ig = mkGroup(ik, label, "verification", 0), byIntent.set(ik, ig);
+      ig.children.push(g);
+      g.leaves.forEach(i => leafPath.set(i, [ik, g.key]));
+    }
+    const dents = [...byIntent.values()];
+    const dRank = g => g.key === "vi:_" ? 9e9 : (intentRank.get(+g.key.slice(3)) ?? 9e8);
+    dents.sort((a, b) => dRank(a) - dRank(b));
+    dents.forEach(finalize);
+    colTrees.set("verification", dents);
+  } else {
+    vEntries.forEach(finalize);
+    colTrees.set("verification", vEntries);
+  }
+
+  /* 代码：按文件分组；文件太多再按目录包一层 */
+  const syms = N.filter(n => n.slot === "implementation");
+  const byFile = new Map();
+  for (const s of syms) {
+    const f = s.file || "（无文件）";
+    const key = "f:" + f;
+    let g = byFile.get(key);
+    if (!g) g = mkGroup(key, f, "implementation", 1), byFile.set(key, g);
+    g.leaves.push(s.i); leafPath.set(s.i, [key]);
+  }
+  byFile.forEach(g => g.leaves.sort((a, b) =>
+    (N[a].line - N[b].line) || N[a].title.localeCompare(N[b].title)));
+  let fEntries = [...byFile.values()];
+  fEntries.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+  if (fEntries.length > GROUP_CAP) {
+    const byDir = new Map();
+    for (const g of fEntries) {
+      const di = g.label.lastIndexOf("/");
+      const dir = di < 0 ? "（根目录）" : g.label.slice(0, di);
+      const key = "d:" + dir;
+      let dg = byDir.get(key);
+      if (!dg) dg = mkGroup(key, dir, "implementation", 0), byDir.set(key, dg);
+      dg.children.push(g);
+      g.leaves.forEach(i => leafPath.set(i, [key, g.key]));
+    }
+    const dents = [...byDir.values()].sort((a, b) => a.label.localeCompare(b.label));
+    dents.forEach(finalize);
+    colTrees.set("implementation", dents);
+  } else {
+    fEntries.forEach(finalize);
+    colTrees.set("implementation", fEntries);
+  }
+})();
 
 /* ---------------- 状态 ---------------- */
 const S = {
@@ -391,7 +501,10 @@ const S = {
   showExec: false,
   status: "all",
   scale: 1, tx: 0, ty: 0,
-  items: [], nodeItem: new Map(), W: 0, H: 0,
+  items: [], colItems: [], colShown: [],
+  nodeItem: new Map(), byUid: new Map(),
+  agg: [], active: SLOT_ORDER.slice(),
+  W: 0, H: 0,
 };
 
 /* ---------------- 布局常量 ---------------- */
@@ -406,8 +519,7 @@ function matchQ(n) {
   if (!S.q) return true;
   let q = S.q.toLowerCase();
   const hay = (n.title + " " + n.id).toLowerCase();
-  /* 文件名只走 file: 前缀。混进普通关键字会把整个文件的符号都拽进来，
-     搜一次 chrono 展开一列 144 行，视图被撑到看不清 */
+  /* 文件名只走 file: 前缀。混进普通关键字会把整个文件的符号都拽进来 */
   const m = q.match(/(\w+):(\S+)/g);
   if (m) {
     for (const tok of m) {
@@ -422,88 +534,224 @@ function matchQ(n) {
   return !q || hay.includes(q);
 }
 
-/* ---------------- 布局 ---------------- */
-function layout() {
-  const items = [];
-  S.nodeItem = new Map();
-  const visible = new Set();     // 通过筛选的节点索引
+/* ---------------- 布局（只算坐标，不碰 DOM） ---------------- */
+let L_visible, L_forceOpen, L_put;
 
-  for (let i = 0; i < N.length; i++) if (matchQ(N[i])) visible.add(i);
-
-  /* 搜索命中时，把含命中的组临时展开，否则搜到了也看不见 */
-  const forceOpen = new Set();
-  if (S.q) {
-    visible.forEach(i => {
-      const n = N[i];
-      if (n.slot === "verification" || n.slot === "implementation") forceOpen.add(groupKeyOf(i));
-    });
+function emitTree(entries) {
+  let shown = 0;
+  for (const g of entries) {
+    const mem = g.allLeaves.filter(i => L_visible.has(i));
+    if (!mem.length) continue;
+    shown += mem.length;
+    const open = S.expanded.has(g.key) || L_forceOpen.has(g.key);
+    const git = {
+      type:"group", uid:"g" + g.key, key:g.key, slot:g.slot, label:g.label,
+      open, count:mem.length, members:mem, child:g.level > 0,
+      orphanN: mem.reduce((a, i) => a + (N[i].deg === 0 ? 1 : 0), 0),
+    };
+    L_put(git);
+    if (open) {
+      emitTree(g.children);
+      for (const i of g.leaves) {
+        if (!L_visible.has(i)) continue;
+        const it = {type:"node", uid:"n" + i, node:N[i], child:true};
+        S.nodeItem.set(i, it); L_put(it);
+      }
+    } else {
+      mem.forEach(i => S.nodeItem.set(i, git));
+    }
   }
+  return shown;
+}
 
-  const colH = [0,0,0,0];
-  const colShown = [0,0,0,0];
+function layout() {
+  S.items = []; S.nodeItem = new Map();
+  L_visible = new Set();
+  for (let i = 0; i < N.length; i++) if (matchQ(N[i])) L_visible.add(i);
+  /* 搜索命中时把所在组链全部展开，否则搜到了也看不见 */
+  L_forceOpen = new Set();
+  if (S.q) L_visible.forEach(i => (leafPath.get(i) || []).forEach(k => L_forceOpen.add(k)));
 
-  for (let c = 0; c < 4; c++) {
-    const slot = SLOT_ORDER[c];
-    if (!S.slots.has(slot)) { colH[c] = 0; continue; }
+  const active = SLOT_ORDER.filter(s => S.slots.has(s));
+  S.active = active;
+  const nCol = active.length;
+  const colH = new Array(nCol).fill(0);
+  const colShown = new Array(nCol).fill(0);
+  const colItems = new Array(nCol).fill(null);
 
+  for (let c = 0; c < nCol; c++) {
+    const slot = active[c];
     let y = TOP;
-    const put = it => { it.col = c; it.x = colX(c); it.y = y; it.h = it.type === "group" ? GRP_H : ROW_H;
-      items.push(it); y += (it.type === "group" ? GRP_STEP : ROW_STEP); };
+    const arr = [];
+    const put = it => {
+      it.col = c; it.x = colX(c); it.y = y;
+      it.h = it.type === "group" ? GRP_H : ROW_H;
+      arr.push(it); y += it.type === "group" ? GRP_STEP : ROW_STEP;
+    };
+    L_put = put;
 
-    if (slot === "intent" || slot === "mechanism") {
-      const list = N.filter(n => n.slot === slot && visible.has(n.i));
-      if (slot === "mechanism") list.sort((a,b) => (mechRank.get(a.i) - mechRank.get(b.i)));
-      else list.sort((a,b) => (b.deg - a.deg) || a.title.localeCompare(b.title));
+    if (colTrees.has(slot)) {
+      colShown[c] = emitTree(colTrees.get(slot));
+    } else {
+      const list = N.filter(n => n.slot === slot && L_visible.has(n.i));
+      if (slot === "mechanism")
+        list.sort((a, b) => (mechRank.get(a.i) ?? 9e9) - (mechRank.get(b.i) ?? 9e9));
+      else
+        list.sort((a, b) => (b.deg - a.deg) || a.title.localeCompare(b.title));
       colShown[c] = list.length;
       list.forEach(n => {
         const it = {type:"node", uid:"n" + n.i, node:n};
         S.nodeItem.set(n.i, it); put(it);
       });
-    } else {
-      const gs = [...groups.values()].filter(g => g.slot === slot).sort((a,b) => a.rank - b.rank);
-      gs.forEach(g => {
-        const mem = g.members.filter(i => visible.has(i));
-        if (!mem.length) return;
-        colShown[c] += mem.length;
-        const open = S.expanded.has(g.key) || forceOpen.has(g.key);
-        const orphanN = mem.filter(i => N[i].deg === 0).length;
-        const git = {
-          type:"group", uid:"g" + g.key, key:g.key, slot, label:g.label,
-          open, count:mem.length, orphanN, members:mem,
-        };
-        put(git);
-        if (open) {
-          mem.forEach(i => {
-            const it = {type:"node", uid:"n" + i, node:N[i], child:true};
-            S.nodeItem.set(i, it); put(it);
-          });
-        } else {
-          mem.forEach(i => S.nodeItem.set(i, git));
-        }
-      });
     }
     colH[c] = y - TOP;
+    colItems[c] = arr;
+    for (const it of arr) S.items.push(it);
   }
 
-  /* 各列垂直居中，看起来才不参差 */
+  /* 各列垂直居中 */
   const maxH = Math.max(0, ...colH);
-  items.forEach(it => { it.y += (maxH - colH[it.col]) / 2; });
+  for (const it of S.items) it.y += (maxH - colH[it.col]) / 2;
 
-  S.items = items;
-  S.colShown = colShown;
-  S.byUid = new Map(items.map(it => [it.uid, it]));
-  S.W = colX(3) + COL_W + PAD;
+  S.colItems = colItems; S.colShown = colShown;
+  S.byUid = new Map(S.items.map(it => [it.uid, it]));
+  S.W = colX(Math.max(0, nCol - 1)) + COL_W + PAD;
   S.H = TOP + maxH + 40;
 }
 
-/* ---------------- 渲染 ---------------- */
+/* ---------------- 渲染（视口虚拟化） ----------------
+   2 万节点不可能全建 DOM：只给落在视口里的条目建元素，
+   平移缩放时按帧增删。元素总数始终被视口大小限住。 */
 const $ = id => document.getElementById(id);
-const world = $("world"), svg = $("edges"), nodesEl = $("nodes");
+const world = $("world"), svg = $("edges"), nodesEl = $("nodes"), stageEl = $("stage");
+const rendered = new Map();   // uid -> el
 
-let raf = 0;
-let afterPaint = [];
-/* 视图操作（居中/适配）必须在 paint 之后跑，否则拿到的是旧布局；
-   setTimeout 和 rAF 的先后在无头环境不可靠，统一挂到 paint 完成后 */
+function makeEl(it) {
+  const el = document.createElement("div");
+  if (it.type === "node") {
+    const n = it.node;
+    el.className = "n " + n.slot + (n.deg === 0 ? " orphan" : "") +
+      (n.status !== "confirmed" ? " " + n.status : "");
+    const indent = it.child ? 14 : 0;
+    el.style.left = (it.x + indent) + "px";
+    el.style.top = it.y + "px";
+    el.style.width = (COL_W - indent) + "px";
+    el.dataset.i = n.i;
+    /* 悬浮提示改由自绘 #tip 处理（见下文），不再用原生 title：
+       原生提示框浮在页面最上层，会挡住下面的节点。 */
+    el.innerHTML = `<span class="t">${esc(n.title)}</span>` +
+      (it.child ? "" : `<span class="b">${n.deg}</span>`);
+  } else {
+    el.className = "g" + (it.open ? " open" : "") + (it.child ? " child" : "");
+    if (it.child) {
+      el.style.left = (it.x + 14) + "px";
+      el.style.top = it.y + "px";
+      el.style.width = (COL_W - 14) + "px";
+    } else {
+      el.style.left = it.x + "px";
+      el.style.top = it.y + "px";
+      el.style.width = COL_W + "px";
+    }
+    el.dataset.g = it.key;
+    el.innerHTML = `<span class="caret"></span><span class="t">${esc(it.label)}</span>` +
+      (it.orphanN ? `<span class="w">${it.orphanN}</span>` : "") +
+      `<span class="b">${it.count}</span>`;
+  }
+  it.el = el;
+  rendered.set(it.uid, el);
+  nodesEl.appendChild(el);
+}
+
+function syncDOM() {
+  const vw = stageEl.clientWidth, vh = stageEl.clientHeight;
+  const vy1 = -S.ty / S.scale - 60, vy2 = vy1 + (vh + 120) / S.scale;
+  const wx1 = -S.tx / S.scale - 60, wx2 = wx1 + (vw + 120) / S.scale;
+  const keep = new Set();
+  for (let c = 0; c < S.active.length; c++) {
+    const arr = S.colItems[c];
+    if (!arr || !arr.length) continue;
+    const x = colX(c);
+    if (x > wx2 || x + COL_W < wx1) continue;   // 整列在视口外
+    /* 列内按 y 有序，二分找可见区间 */
+    let lo = 0, hi = arr.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1;
+      if (arr[mid].y + arr[mid].h < vy1) lo = mid + 1; else hi = mid; }
+    let start = lo; hi = arr.length;
+    while (start < hi) { const mid = (start + hi) >> 1;
+      if (arr[mid].y <= vy2) start = mid + 1; else hi = mid; }
+    for (let k = lo; k < start; k++) {
+      const it = arr[k];
+      keep.add(it.uid);
+      if (!it.el || !it.el.isConnected) makeEl(it);
+    }
+  }
+  for (const [uid, el] of rendered) {
+    if (!keep.has(uid)) {
+      const it = S.byUid.get(uid);
+      if (it) it.el = null;
+      el.remove(); rendered.delete(uid);
+    }
+  }
+}
+
+/* ---------------- 边（聚合 + 视口裁剪） ---------------- */
+function buildAgg() {
+  /* 折叠状态下同一对条目之间的多条边合并成一条。
+     执行边（用例→代码）默认隐藏——大库上聚合后仍是蜘蛛网；只在选中节点时点亮相关的。 */
+  const selOn = S.sel !== null;
+  const {near, touchUid} = selSets();
+  const agg = new Map();
+  for (const e of E) {
+    const A = S.nodeItem.get(e.a), B = S.nodeItem.get(e.b);
+    if (!A || !B || A === B) continue;
+    if (e.t === "exercises" && !S.showExec &&
+        !(selOn && touchUid.has(A.uid) && touchUid.has(B.uid))) continue;
+    const k = A.uid + "\u0000" + B.uid + "\u0000" + e.t;
+    let g = agg.get(k);
+    if (!g) { g = {A, B, t:e.t, n:0, c:e.c}; agg.set(k, g); }
+    g.n++;
+    if (e.c === "certain") g.c = "certain";
+    else if (e.c === "likely" && g.c === "possible") g.c = "likely";
+  }
+  S.agg = [...agg.values()];
+  S.selNear = near; S.selTouch = touchUid;
+}
+
+function drawEdges() {
+  const vw = stageEl.clientWidth, vh = stageEl.clientHeight;
+  const vy1 = -S.ty / S.scale - 80, vy2 = vy1 + (vh + 160) / S.scale;
+  const wx1 = -S.tx / S.scale - 40, wx2 = wx1 + (vw + 80) / S.scale;
+  const paths = [];
+  for (const g of S.agg) {
+    const A = g.A, B = g.B;
+    const x1 = rightEdge(A), x2 = leftEdge(B);
+    if (x2 < wx1 || x1 > wx2) continue;
+    const y1 = A.y + A.h / 2, y2 = B.y + B.h / 2;
+    if (Math.max(y1, y2) < vy1 || Math.min(y1, y2) > vy2) continue;
+    const w = g.c === "certain" ? 1.7 : g.c === "likely" ? 1.15 : 0.8;
+    const dash = g.c === "possible" ? ` stroke-dasharray="5 4"` : "";
+    let d;
+    if (x2 - x1 < 24) {
+      const bulge = Math.max(70, Math.abs(y2 - y1) * 0.5);
+      d = `M${x1},${y1} C${x1 + bulge},${y1} ${x2 + bulge},${y2} ${x2},${y2}`;
+    } else {
+      const dx = (x2 - x1) * 0.5;
+      d = `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+    }
+    paths.push(`<path d="${d}" class="e ${g.t}" stroke-width="${Math.min(4, w + Math.log2(g.n) * 0.5)}"${dash} data-ab="${A.uid}|${B.uid}"/>`);
+  }
+  svg.innerHTML = paths.join("");
+}
+
+/* 连线锚点：子行缩进 14px */
+function leftEdge(it){ return it.type === "node" && it.child ? it.x + 14 : it.x; }
+function rightEdge(it){ return leftEdge(it) + (it.type === "node" && it.child ? COL_W - 14 : COL_W); }
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* ---------------- 调度 ---------------- */
+let raf = 0, afterPaint = [], cullRaf = 0;
+/* 视图操作（居中/适配）必须在 paint 之后跑，否则拿到的是旧布局 */
 function schedule(fn) {
   if (fn) afterPaint.push(fn);
   if (raf) return;
@@ -514,9 +762,84 @@ function schedule(fn) {
     q.forEach(f => { try { f(); } catch (e) { console.error(e); } });
   });
 }
+/* 平移/缩放不重排，只按帧增删可见元素与连线 */
+function cull() {
+  if (cullRaf) return;
+  cullRaf = requestAnimationFrame(() => { cullRaf = 0; syncDOM(); drawEdges(); highlight(); });
+}
 
-/* 选中节点的邻居集合，以及「碰到了选中节点」的条目 uid 集合。
-   连线过滤和节点淡化都只查这两个集合，1800 条边才不至于卡。 */
+function paint() {
+  layout();
+  world.style.width = S.W + "px";
+  world.style.height = S.H + "px";
+  svg.setAttribute("width", S.W);
+  svg.setAttribute("height", S.H);
+  svg.setAttribute("viewBox", `0 0 ${S.W} ${S.H}`);
+
+  /* 列头 */
+  const headFrag = document.createDocumentFragment();
+  const headBox = $("colheads") || (() => {
+    const d = document.createElement("div"); d.id = "colheads";
+    d.style.cssText = "position:absolute;left:0;top:0";
+    world.appendChild(d); return d;
+  })();
+  headBox.replaceChildren();
+  S.active.forEach((slot, c) => {
+    const total = N.reduce((a, n) => a + (n.slot === slot ? 1 : 0), 0);
+    const shown = S.colShown[c];
+    const d = document.createElement("div");
+    d.className = "colhead"; d.dataset.slot = slot;
+    d.style.left = colX(c) + "px"; d.style.top = "10px"; d.style.width = COL_W + "px";
+    d.style.setProperty("--cc", `var(--lc-${slot})`);
+    d.innerHTML = `<b>${SLOT_CN[slot]}</b><span>${shown === total ? total : shown + " / " + total}</span>`;
+    headFrag.appendChild(d);
+  });
+  headBox.appendChild(headFrag);
+
+  /* 全量重建可见元素（布局变了，位置都不同） */
+  for (const [, el] of rendered) el.remove();
+  rendered.clear();
+  S.items.forEach(it => { it.el = null; });
+  buildAgg();
+  syncDOM();
+  drawEdges();
+  apply();
+  $("stat").innerHTML = `<i>${DATA.meta.nodes}</i> 节点 · <i>${DATA.meta.edges}</i> 边 · ` +
+    `<em>${orphanCount}</em> 孤儿 · 视口内 ${rendered.size}`;
+  highlight();
+  $("empty").style.display = S.items.length ? "none" : "flex";
+}
+
+/* ---------------- 变换 ---------------- */
+function apply() {
+  world.style.transform = `translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
+  $("zlvl").textContent = Math.round(S.scale * 100) + "%";
+}
+function fit() {
+  const vw = stageEl.clientWidth, vh = stageEl.clientHeight;
+  const s = Math.min((vw - 56) / S.W, (vh - 40) / S.H, 1.1);
+  S.scale = Math.max(0.02, s);
+  S.tx = (vw - S.W * S.scale) / 2;
+  S.ty = Math.max(8, (vh - S.H * S.scale) / 2);
+  apply(); cull();
+}
+function zoomAt(px, py, k) {
+  const ns = Math.min(2.6, Math.max(0.03, S.scale * k));
+  const r = ns / S.scale;
+  S.tx = px - (px - S.tx) * r;
+  S.ty = py - (py - S.ty) * r;
+  S.scale = ns;
+  apply(); cull();
+}
+function centerOn(it) {
+  const vw = stageEl.clientWidth, vh = stageEl.clientHeight;
+  if (S.scale < 0.5) S.scale = 0.62;
+  S.tx = vw / 2 - (it.x + COL_W / 2) * S.scale;
+  S.ty = vh / 2 - (it.y + it.h / 2) * S.scale;
+  apply(); cull();
+}
+
+/* ---------------- 高亮 ---------------- */
 function selSets() {
   const sel = S.sel;
   const near = new Set();
@@ -533,148 +856,14 @@ function selSets() {
   return {near, touchUid};
 }
 
-function paint() {
-  layout();
-  world.style.width = S.W + "px";
-  world.style.height = S.H + "px";
-  svg.setAttribute("width", S.W);
-  svg.setAttribute("height", S.H);
-  svg.setAttribute("viewBox", `0 0 ${S.W} ${S.H}`);
-
-  const frag = document.createDocumentFragment();
-
-  /* 列头 */
-  SLOT_ORDER.forEach((slot, c) => {
-    if (!S.slots.has(slot)) return;
-    const total = N.filter(n => n.slot === slot).length;
-    const shown = S.colShown[c];
-    const d = document.createElement("div");
-    d.className = "colhead"; d.dataset.slot = slot;
-    d.style.left = colX(c) + "px"; d.style.top = "10px"; d.style.width = COL_W + "px";
-    d.style.setProperty("--cc", `var(--lc-${slot})`);
-    d.innerHTML = `<b>${SLOT_CN[slot]}</b><span>${shown === total ? total : shown + " / " + total}</span>`;
-    frag.appendChild(d);
-  });
-
-  /* 节点与组 */
-  for (const it of S.items) {
-    if (it.type === "node") {
-      const n = it.node;
-      const el = document.createElement("div");
-      el.className = "n " + n.slot + (n.deg === 0 ? " orphan" : "") +
-        (n.status !== "confirmed" ? " " + n.status : "");
-      const indent = it.child ? 14 : 0;
-      el.style.left = (it.x + indent) + "px";
-      el.style.top = it.y + "px";
-      el.style.width = (COL_W - indent) + "px";
-      el.dataset.i = n.i;
-      el.title = `${n.title}\n${n.slot} · ${n.conf} · ${n.status}\n${n.ref || n.id}`;
-      el.innerHTML = `<span class="t">${esc(n.title)}</span>` +
-        (it.child ? "" : `<span class="b">${n.deg}</span>`);
-      it.el = el;
-      frag.appendChild(el);
-    } else if (it.type === "group") {
-      const el = document.createElement("div");
-      el.className = "g" + (it.open ? " open" : "");
-      el.style.cssText = `left:${it.x}px;top:${it.y}px;width:${COL_W}px;--cc:var(--lc-${it.slot})`;
-      el.dataset.g = it.key;
-      el.innerHTML = `<span class="caret"></span><span class="t">${esc(it.label)}</span>` +
-        (it.orphanN ? `<span class="w" title="${it.orphanN} 个无连线">${it.orphanN}</span>` : "") +
-        `<span class="b">${it.count}</span>`;
-      it.el = el;
-      frag.appendChild(el);
-    }
-  }
-  nodesEl.replaceChildren(frag);
-
-  /* 边：折叠状态下同一对组之间的多条边合并成一条。
-     执行边（用例→代码）默认隐藏——793 条聚合后仍然铺满整个画面，
-     看不清结构；只在选中节点时点亮它直接相关的那些。 */
-  const {near: selNear, touchUid: execTouch} = selSets();
-  const agg = new Map();
-  const showExec = S.showExec || S.sel !== null;
-  for (const e of E) {
-    const A = S.nodeItem.get(e.a), B = S.nodeItem.get(e.b);
-    if (!A || !B || A === B) continue;
-    if (e.t === "exercises" && !S.showExec &&
-        !(S.sel !== null && execTouch.has(A.uid) && execTouch.has(B.uid))) continue;
-    const k = A.uid + "\u0000" + B.uid + "\u0000" + e.t;
-    let g = agg.get(k);
-    if (!g) { g = {A, B, t:e.t, n:0, c:e.c}; agg.set(k, g); }
-    g.n++;
-    if (e.c === "certain") g.c = "certain";
-    else if (e.c === "likely" && g.c === "possible") g.c = "likely";
-  }
-
-  const paths = [];
-  for (const g of agg.values()) {
-    const x1 = rightEdge(g.A), y1 = g.A.y + g.A.h / 2;
-    const x2 = leftEdge(g.B), y2 = g.B.y + g.B.h / 2;
-    const w = g.c === "certain" ? 1.7 : g.c === "likely" ? 1.15 : 0.8;
-    const dash = g.c === "possible" ? ` stroke-dasharray="5 4"` : "";
-    let d;
-    if (x2 - x1 < 24) {
-      /* 同列或倒流：直连会穿过方框，改走右侧弧线 */
-      const bulge = Math.max(70, Math.abs(y2 - y1) * 0.5);
-      d = `M${x1},${y1} C${x1 + bulge},${y1} ${x2 + bulge},${y2} ${x2},${y2}`;
-    } else {
-      const dx = (x2 - x1) * 0.5;
-      d = `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
-    }
-    paths.push(`<path d="${d}" class="e ${g.t}" stroke-width="${Math.min(4, w + Math.log2(g.n) * 0.5)}"${dash} data-ab="${g.A.uid}|${g.B.uid}"/>`);
-  }
-  svg.innerHTML = paths.join("");
-
-  apply();
-  $("stat").innerHTML = `<i>${DATA.meta.nodes}</i> 节点 · <i>${DATA.meta.edges}</i> 边 · ` +
-    `<em>${orphanCount}</em> 孤儿`;
-  highlight(selNear, execTouch);
-}
-
-/* 连线锚点：折叠组从左边进，展开的子节点比组头缩进 14px */
-function leftEdge(it){ return it.type === "node" && it.child ? it.x + 14 : it.x; }
-function rightEdge(it){ return leftEdge(it) + (it.type === "node" && it.child ? COL_W - 14 : COL_W); }
-
-function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-
-/* ---------------- 变换 ---------------- */
-function apply() {
-  world.style.transform = `translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
-  $("zlvl").textContent = Math.round(S.scale * 100) + "%";
-}
-function fit() {
-  const vw = $("stage").clientWidth, vh = $("stage").clientHeight;
-  const s = Math.min((vw - 56) / S.W, (vh - 40) / S.H, 1.1);
-  S.scale = Math.max(0.16, s);
-  S.tx = (vw - S.W * S.scale) / 2;
-  S.ty = Math.max(8, (vh - S.H * S.scale) / 2);
-  apply();
-}
-function zoomAt(px, py, k) {
-  const ns = Math.min(2.6, Math.max(0.12, S.scale * k));
-  const r = ns / S.scale;
-  S.tx = px - (px - S.tx) * r;
-  S.ty = py - (py - S.ty) * r;
-  S.scale = ns;
-  apply();
-}
-function centerOn(it) {
-  const vw = $("stage").clientWidth, vh = $("stage").clientHeight;
-  if (S.scale < 0.5) S.scale = 0.62;
-  S.tx = vw / 2 - (it.x + COL_W / 2) * S.scale;
-  S.ty = vh / 2 - (it.y + it.h / 2) * S.scale;
-  apply();
-}
-
-/* ---------------- 高亮 ---------------- */
-function highlight(selNear, execTouch) {
+function highlight() {
   const sel = S.sel;
-  if (selNear === undefined) ({near: selNear, touchUid: execTouch} = selSets());
-  const near = selNear;
+  let near = S.selNear, execTouch = S.selTouch;
+  if (!near || !execTouch) ({near, touchUid: execTouch} = selSets());
   const q = S.q.trim().toLowerCase();
 
   for (const it of S.items) {
-    if (!it.el) continue;
+    if (!it.el) continue;   // 视口外的不管
     it.el.classList.remove("dim", "sel", "hit", "path");
     if (it.type === "node") {
       const i = it.node.i;
@@ -709,8 +898,9 @@ function showNode(i) {
   panel.classList.add("on");
 
   const tags = [`<span class="tag ${n.slot}">${SLOT_CN[n.slot]}</span>`,
-    `<span class="tag c-${n.conf}">${n.conf}</span>`];
-  if (n.status !== "confirmed") tags.push(`<span class="tag st-${n.status}">${n.status}</span>`);
+    `<span class="tag c-${n.conf}" title="搜索语法：conf:${n.conf}">${CONF_CN[n.conf] || n.conf}</span>`];
+  if (n.status !== "confirmed") tags.push(
+    `<span class="tag st-${n.status}" title="搜索语法：status:${n.status}">${ST_CN[n.status] || n.status}</span>`);
   if (n.deg === 0) tags.push(`<span class="tag st-draft">孤立</span>`);
   $("ptags").innerHTML = tags.join("");
   $("ptitle").textContent = n.title;
@@ -729,7 +919,7 @@ function showNode(i) {
   const relHtml = (list, emptyTxt) => list.length ? `<div class="rel">${list.slice(0, 60).map(x => {
     const t = N[x.o];
     return `<a data-go="${x.o}"><span class="k">${EDGE_CN[x.e.t] || x.e.t}</span>` +
-      `<span class="x">${esc(t.title)}</span><span class="n">${x.e.c === "certain" ? "" : x.e.c}</span></a>`;
+      `<span class="x">${esc(t.title)}</span><span class="n">${x.e.c === "certain" ? "" : (CONF_CN[x.e.c] || x.e.c)}</span></a>`;
   }).join("")}${list.length > 60 ? `<div class="empty">还有 ${list.length - 60} 条…</div>` : ""}</div>`
    : `<div class="empty">${emptyTxt}</div>`;
 
@@ -737,7 +927,7 @@ function showNode(i) {
   if (n.body) html += `<div class="sect"><h3>说明</h3><pre class="body">${esc(n.body)}</pre></div>`;
   html += `<div class="sect"><h3>属性</h3><dl class="kv">` +
     kv.map(([k,v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("") + `</dl></div>`;
-  html += `<div class="sect"><h3>上游 · 谁指向它 (${up.length})</h3>${relHtml(up, n.slot === "intent" ? "场景是最上层，没有上游" : "没有节点指向它")}</div>`;
+  html += `<div class="sect"><h3>上游 · 谁指向它 (${up.length})</h3>${relHtml(up, n.slot === "intent" || n.slot === "concept" ? "最上层，没有上游" : "没有节点指向它")}</div>`;
   html += `<div class="sect"><h3>下游 · 它指向谁 (${down.length})</h3>${relHtml(down, n.slot === "implementation" ? "代码符号是最底层，没有下游" : "它没有指向任何节点")}</div>`;
   html += `<div class="sect"><h3>操作</h3><div id="pacts">
       <button class="btn" id="actCopy">复制深链</button>
@@ -758,14 +948,11 @@ function showNode(i) {
   };
   $("actCenter").onclick = () => { const it = S.nodeItem.get(i); if (it) centerOn(it); };
   $("actOnly").onclick = () => {
-    const keep = new Set([i, ...near(i)]);
+    const keep = new Set([i, ...nearOf(i)]);
     S.q = ""; $("q").value = "";
     S.slots = new Set([...keep].map(x => N[x].slot));
     S.orphansOnly = false; $("orphanBtn").classList.remove("on");
-    keep.forEach(x => {
-      const nn = N[x];
-      if (nn.slot === "verification" || nn.slot === "implementation") S.expanded.add(groupKeyOf(x));
-    });
+    keep.forEach(x => (leafPath.get(x) || []).forEach(k => S.expanded.add(k)));
     renderChips();
     schedule(() => { const it = S.nodeItem.get(i); if (it) centerOn(it); });
   };
@@ -773,7 +960,7 @@ function showNode(i) {
   highlight();
   history.replaceState(null, "", "#" + encodeURIComponent(n.id));
 }
-function near(i) {
+function nearOf(i) {
   const s = new Set();
   inA[i].forEach(e => s.add(E[e].a));
   outA[i].forEach(e => s.add(E[e].b));
@@ -782,8 +969,8 @@ function near(i) {
 }
 function goTo(i) {
   const n = N[i];
-  /* 目标在折叠组里 → 先展开，否则点过去什么也看不到 */
-  if (n.slot === "verification" || n.slot === "implementation") S.expanded.add(groupKeyOf(i));
+  /* 目标在折叠组里 → 先展开整条组链，否则点过去什么也看不到 */
+  (leafPath.get(i) || []).forEach(k => S.expanded.add(k));
   if (!S.slots.has(n.slot)) { S.slots.add(n.slot); renderChips(); }
   showNode(i);
   schedule(() => { const it = S.nodeItem.get(i); if (it) centerOn(it); });
@@ -810,29 +997,83 @@ nodesEl.addEventListener("click", ev => {
 });
 
 /* 平移 */
-const stage = $("stage");
 let dragging = false, sx = 0, sy = 0, moved = 0;
-stage.addEventListener("mousedown", ev => {
+stageEl.addEventListener("mousedown", ev => {
   if (ev.target.closest(".n,.g")) return;
   dragging = true; moved = 0; sx = ev.clientX; sy = ev.clientY;
-  stage.classList.add("drag");
+  stageEl.classList.add("drag");
 });
 window.addEventListener("mousemove", ev => {
   if (!dragging) return;
   const dx = ev.clientX - sx, dy = ev.clientY - sy;
   moved += Math.abs(dx) + Math.abs(dy);
   S.tx += dx; S.ty += dy; sx = ev.clientX; sy = ev.clientY;
-  apply();
+  apply(); cull();
 });
 window.addEventListener("mouseup", () => {
   if (dragging && moved < 4) closePanel();
-  dragging = false; stage.classList.remove("drag");
+  dragging = false; stageEl.classList.remove("drag");
 });
-stage.addEventListener("wheel", ev => {
+stageEl.addEventListener("wheel", ev => {
   ev.preventDefault();
-  const r = stage.getBoundingClientRect();
+  const r = stageEl.getBoundingClientRect();
   zoomAt(ev.clientX - r.left, ev.clientY - r.top, ev.deltaY > 0 ? 0.9 : 1.11);
 }, {passive:false});
+
+/* ---------------- 自绘悬浮提示 ---------------- */
+const tipEl = document.createElement("div");
+tipEl.id = "tip";
+document.body.appendChild(tipEl);
+let tipTimer = 0, tipOn = null;
+
+function tipHTML(el) {
+  if (el.classList.contains("n")) {
+    const n = N[+el.dataset.i];
+    return `<b>${esc(n.title)}</b>` +
+      `${SLOT_CN[n.slot]} · 置信度：${CONF_CN[n.conf] || n.conf} · ${ST_CN[n.status] || n.status}` +
+      `<br><span class="m">${esc(n.ref || n.id)}</span>`;
+  }
+  /* 分组条：标题 + 数量 */
+  const label = el.querySelector(".t").textContent;
+  const cnt = el.querySelector(".b");
+  return `<b>${esc(label)}</b>共 ${cnt ? cnt.textContent : "?"} 个`;
+}
+function showTip(el) {
+  tipEl.innerHTML = tipHTML(el);
+  tipEl.classList.add("on");
+  tipEl.style.left = "0px"; tipEl.style.top = "0px";   // 先归位才能量出真实尺寸
+  const r = el.getBoundingClientRect();
+  const tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+  /* 右边界：详情面板开着时别钻到面板底下去 */
+  const rightLimit = window.innerWidth -
+    (document.body.classList.contains("panel-open") ? 408 : 8);
+  let x = Math.min(Math.max(8, r.left + 14), Math.max(8, rightLimit - tw));
+  let y = r.top - th - 8;
+  if (y < 60) y = r.bottom + 8;   // 顶栏下面放不下就放到元素下方
+  tipEl.style.left = x + "px"; tipEl.style.top = y + "px";
+  tipOn = el;
+}
+function hideTip() {
+  clearTimeout(tipTimer); tipTimer = 0;
+  tipEl.classList.remove("on"); tipOn = null;
+}
+nodesEl.addEventListener("mouseover", ev => {
+  const el = ev.target.closest(".n,.g");
+  if (!el || el === tipOn) return;
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => { if (el.isConnected) showTip(el); }, 350);
+});
+nodesEl.addEventListener("mouseout", ev => {
+  const el = ev.target.closest(".n,.g");
+  if (el && !el.contains(ev.relatedTarget)) {   // 真正移出这个元素才收起
+    if (el === tipOn) hideTip(); else clearTimeout(tipTimer);
+  }
+});
+/* 一有操作就消失：点击、平移、缩放都不让提示框停留 */
+stageEl.addEventListener("mousedown", hideTip, true);
+stageEl.addEventListener("wheel", hideTip, true);
+window.addEventListener("keydown", hideTip);
+window.addEventListener("resize", hideTip);
 
 /* 搜索 */
 let qt = 0;
@@ -848,21 +1089,25 @@ $("q").addEventListener("input", ev => {
 function fitToMatch() {
   const hs = S.items.filter(it => it.type === "node" && matchQ(it.node));
   if (!hs.length) return;
-  const xs = hs.map(it => it.x), ys = hs.map(it => it.y);
-  const x1 = Math.min(...xs), x2 = Math.max(...xs) + COL_W;
-  const y1 = Math.min(...ys), y2 = Math.max(...ys) + ROW_H;
-  const vw = stage.clientWidth, vh = stage.clientHeight;
+  let x1 = Infinity, x2 = -Infinity, y1 = Infinity, y2 = -Infinity;
+  for (const it of hs) {
+    if (it.x < x1) x1 = it.x;
+    if (it.x + COL_W > x2) x2 = it.x + COL_W;
+    if (it.y < y1) y1 = it.y;
+    if (it.y + ROW_H > y2) y2 = it.y + ROW_H;
+  }
+  const vw = stageEl.clientWidth, vh = stageEl.clientHeight;
   const s = Math.min((vw - 80) / (x2 - x1 + 60), (vh - 60) / (y2 - y1 + 40), 1.0);
-  S.scale = Math.max(0.14, s);
+  S.scale = Math.max(0.03, s);
   S.tx = vw / 2 - (x1 + x2) / 2 * S.scale;
   S.ty = vh / 2 - (y1 + y2) / 2 * S.scale;
-  apply();
+  apply(); cull();
 }
 
 /* 槽位 chips */
 function renderChips() {
   $("slotchips").innerHTML = SLOT_ORDER.map(s => {
-    const c = N.filter(n => n.slot === s).length;
+    const c = N.reduce((a, n) => a + (n.slot === s ? 1 : 0), 0);
     return `<div class="chip${S.slots.has(s) ? " on" : ""}" data-s="${s}">` +
       `<span class="dot" style="background:var(--lc-${s})"></span>${SLOT_CN[s]} ${c}</div>`;
   }).join("");
@@ -889,14 +1134,14 @@ let allOpen = false;
 $("expandBtn").onclick = e => {
   allOpen = !allOpen;
   S.expanded.clear();
-  if (allOpen) groups.forEach(g => S.expanded.add(g.key));
+  if (allOpen) allGroupKeys.forEach(k => S.expanded.add(k));
   e.currentTarget.classList.toggle("on", allOpen);
   e.currentTarget.textContent = allOpen ? "全部折叠" : "全部展开";
   schedule(fit);
 };
 $("fitBtn").onclick = fit;
-$("zi").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width/2, r.height/2, 1.2); };
-$("zo").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width/2, r.height/2, 1/1.2); };
+$("zi").onclick = () => { const r = stageEl.getBoundingClientRect(); zoomAt(r.width/2, r.height/2, 1.2); };
+$("zo").onclick = () => { const r = stageEl.getBoundingClientRect(); zoomAt(r.width/2, r.height/2, 1/1.2); };
 $("pclose").onclick = closePanel;
 $("themeBtn").onclick = () => {
   const d = document.documentElement.dataset.theme === "dark";
@@ -907,10 +1152,11 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") { if (document.activeElement === $("q")) $("q").blur(); else closePanel(); }
   if (ev.key === "f" && document.activeElement !== $("q")) fit();
 });
-window.addEventListener("resize", () => apply());
+window.addEventListener("resize", () => { apply(); cull(); });
 
 /* ---------------- 图例 ---------------- */
 $("legend").innerHTML = `
+  <div class="row"><span class="sw" style="background:#10b981"></span>解释（概念页）</div>
   <div class="row"><span class="sw" style="background:#6366f1"></span>由…组成</div>
   <div class="row"><span class="sw" style="background:#06b6d4"></span>由…验证</div>
   <div class="row"><span class="sw" style="background:#f59e0b"></span>执行到</div>
@@ -932,6 +1178,7 @@ document.documentElement.style.setProperty("--lc-intent", "#4f46e5");
 document.documentElement.style.setProperty("--lc-mechanism", "#0891b2");
 document.documentElement.style.setProperty("--lc-verification", "#d97706");
 document.documentElement.style.setProperty("--lc-implementation", "#64748b");
+document.documentElement.style.setProperty("--lc-concept", "#059669");
 /* 深浅色：跟随系统，?theme=dark|light 可强制（分享深链时锁定主题用） */
 const themeQ = new URLSearchParams(location.search).get("theme");
 if (themeQ === "dark" || (themeQ !== "light" &&

@@ -20,9 +20,11 @@ pack:
     note: 展示名，允许非 ASCII
 
 # ---------------------------------------------------------------- 槽位映射
-# 四个槽位必须全部映射，不允许省略。槽位名固定，label 由 pack 自由命名。
+# 主链四个槽位必须全部映射，不允许省略。槽位名固定，label 由 pack 自由命名。
+# concept（概念页）是可选的背景知识层：业务背景复杂时才映射，不映射不影响建库。
 slots:
   required: [intent, mechanism, verification, implementation]
+  optional: [concept]
   each:
     label: string          # 本领域里这一层叫什么，显示用
     id_prefix: string      # 如 "abc.scn"，用于生成全局唯一 id

@@ -3,7 +3,7 @@
 > strata /ˈstrɑːtə/ — 地层。一层层沉积下来的东西，按顺序读，就能还原它怎么形成的。
 
 把散落的文档、测试和代码，按层沉积成能查、能问、能反查影响面的知识库。
-四层结构：**场景 → 功能 → IT/UT → 代码**。
+主链四层：**场景 → 功能 → IT/UT → 代码**，外加可选的概念层（背景知识页）。
 
 > 📐 完整设计说明与使用手册见 [docs/architecture.html](docs/architecture.html)（含 7 张架构图，浏览器直接打开）
 
@@ -19,7 +19,7 @@
 strata.py        命令行入口（python strata.py <cmd>）
 
 core/            内核，零领域内容，不随业务变化
-├── schema.yaml      四槽位元模型、边类型、证据字段、空洞规则
+├── schema.yaml      五槽位元模型（含可选概念层）、边类型、证据字段、空洞规则
 ├── pack.schema.yaml 写领域包的规范（想接新领域只读这个）
 ├── base.py          SQLite 存储与路径
 ├── compiler.py      卡片 -> 索引（单事务重建，失败整体回滚）
@@ -30,9 +30,10 @@ core/            内核，零领域内容，不随业务变化
 extractors/      抽取器，可插拔
 packs/           领域包安装位，默认空
 cards/           知识卡片（事实源，进 Git）
-├── intent/          场景层
+├── intent/          场景层（正文必须写业务知识：背景/触发/主流程/边界）
 ├── mechanism/       功能层
-└── verification/    验证层（IT / UT）
+├── verification/    验证层（IT / UT）
+└── concept/         概念层（可选，背景知识页）
 
 .opencode/       skill + 七条命令，复制进你的代码仓即可用
 templates/       OpenCode 接入模板（AGENTS 片段 / command / opencode.json）
@@ -52,8 +53,9 @@ python <你的仓>/.opencode/skills/strata/scripts/strata-run.py home set <strat
 ```
 
 然后敲一条命令走完整条链：**`/strata-build <你的代码仓>`**。
-它依次做抽取 → 编译 → 播种场景 → 逐张裁决 → 补空洞，
+它依次做抽取 → 编译 → 撰写场景卡/概念卡 → 逐张裁决 → 补空洞，
 只在需要你拍板时停下；每步收尾都会告诉你下一条命令是什么。
+模型写的卡正文必须带业务知识——只有结构字段没有正文的卡会被编译器警告「正文过薄」。
 
 只查库的人什么都不用装，连服务端就行（见下）。
 
@@ -109,7 +111,7 @@ python strata.py viz                   # 离线导出，生成 docs/graph.html�
 
 1. 读 `core/pack.schema.yaml`
 2. 定 `mechanism_key`（最重要的一步，决定「什么算一个功能点」）
-3. 填四个槽位的 label 与 fields
+3. 填主链四槽位的 label 与 fields（概念层可选）
 4. 写 1 个 pack 抽取器（core 自带的四个直接复用）
 5. 写几条引述模板，把空洞翻译成本领域的问法
 6. 放到 `packs/<你的领域>/domain.yaml`
@@ -121,7 +123,7 @@ python strata.py viz                   # 离线导出，生成 docs/graph.html�
 ```markdown
 ---
 id: <slot_prefix>.<slug>
-slot: intent | mechanism | verification | implementation
+slot: intent | mechanism | verification | implementation | concept
 domain: <pack id>
 title: <一句话>
 status: draft | proposed | confirmed | disputed
@@ -133,7 +135,7 @@ evidence:
   - { ref: "<file>:<line> 或 <doc>#<anchor>", note: <说明> }
 ---
 
-正文：给人看，也给模型当检索上下文。
+正文：给人看，也给模型当检索上下文。场景/功能/概念卡的正文按模板写全，过薄的正文会被编译器警告。
 ```
 
 边只认 `frontmatter.links`，正文里的 `[[双链]]` 是给模型看的路标，编译器忽略。

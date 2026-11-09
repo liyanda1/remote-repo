@@ -43,12 +43,67 @@ line: 698
 | `mechanism` | `verification` | `verified_by` |
 | `verification` | `implementation` | `exercises` |
 | `implementation` | `implementation` | `depends_on` |
+| `concept` | `intent` / `mechanism` | `explains` |
+| `concept` | `concept` | `related_to` |
 
 `weight` 是 0–1 的覆盖强度：1.0 表示确定覆盖，0.5 以下表示只沾到边。
 
-## 四个槽位的卡片该写什么
+## 正文必须写业务知识（这是知识库的价值所在）
 
-**intent（场景 / 能力）** —— 少而重，人工维护。
+frontmatter 只负责「连得上」，正文负责「看得懂」。
+**只有结构字段（type/weight/状态）没有业务内容的卡，编译器会报「正文过薄」警告**——
+这样的卡片检索不到任何知识，等于没写。三类卡的正文模板：
+
+**intent（场景卡）正文模板** —— 每节 1–3 句，写完通常 150–400 字：
+
+```markdown
+## 背景
+谁在什么条件下需要这个能力；为什么要存在这个场景。
+
+## 触发
+入口是什么（信号 / 请求 / 命令 / 用户操作），前置条件有哪些。
+
+## 主流程
+正常情况下系统做什么，分几步。
+
+## 边界与异常
+哪些情况要特殊处理（超时、掉电、并发、参数非法），各自的行为是什么。
+```
+
+**mechanism（功能点卡）正文模板**：
+
+```markdown
+## 职责
+这个功能点负责什么、不负责什么（边界写清楚，防止和相邻功能点混淆）。
+
+## 工作方式
+状态转移 / 服务序列 / 算法步骤，按本领域的形态写。
+
+## 输入 / 输出
+吃什么、吐什么、和谁交互。
+
+## 上下游
+上游依赖谁（含不在本仓的），下游被谁使用。
+```
+
+**concept（概念页）正文模板** —— 写给「新人 + 模型」看的背景知识：
+
+```markdown
+## 是什么
+一句话定义，再加展开。
+
+## 为什么重要
+不理解它会在本领域犯什么错。
+
+## 常见误区
+容易混淆的点，和正确理解的差别。
+```
+
+verification / implementation 由抽取器生成，正文不强制（它们的价值在证据链不在叙述）。
+
+## 五个槽位的卡片该写什么
+
+**intent（场景 / 能力）** —— 少而重，人工维护。正文必须按上面的模板写全。
 
 ```markdown
 ---
@@ -62,26 +117,40 @@ source: user-answer
 links:
   - { to: ota.tr.flashing-power-lost, type: composed_of, weight: 1.0 }
 ---
-设备在 FLASHING 阶段掉电，下次上电必须走回滚，不能继续刷写。
+## 背景
+车辆在 FLASHING 阶段可能意外断电（事故、低压保护、人为拔电）。
+## 触发
+下次上电自检发现升级标记未清除。
+## 主流程
+读回滚区标志 → 校验旧镜像完整性 → 走回滚流程 → 上报云端失败原因。
+## 边界与异常
+回滚区也损坏时进入安全模式；断电发生在校验段则可续刷，不需要回滚。
 ```
 
-**mechanism（功能 / 机制）** —— 领域形态的核心，唯一键由包的 `mechanism_key` 决定。
+**mechanism（功能点）** —— 领域形态的核心，唯一键由包的 `mechanism_key` 决定。
+正文按模板写职责与工作方式。
+
+**concept（概念页）** —— 可选的背景知识层。业务术语多、新人上手难的领域才需要；
+一张概念页通过 `explains` 连到它解释的场景/功能点。
 
 ```markdown
 ---
-id: ota.tr.flashing-power-lost
-slot: mechanism
+id: ota.cpt.rollback
+slot: concept
 domain: ota
-title: FLASHING + POWER_LOST → 回滚
-status: confirmed
-confidence: certain
-source: extractor
-state: FLASHING
-event: POWER_LOST
-guard: ""
+title: 回滚（Rollback）
+status: proposed
+confidence: likely
+source: manual
 links:
-  - { to: ota.tst.power_loss_ut, type: verified_by }
+  - { to: ota.scn.power-loss-recovery, type: explains }
 ---
+## 是什么
+升级失败时把 ECU 恢复到上一个可用版本机制的统称，靠 A/B 分区或备份区实现。
+## 为什么重要
+车规场景不允许变砖，回滚是所有刷写流程的兜底分支。
+## 常见误区
+回滚不是「重试升级」，是恢复旧版本；两者状态机路径完全不同。
 ```
 
 **verification（IT / UT）** —— 可由测试代码批量生成，正文写清这个用例断言什么。

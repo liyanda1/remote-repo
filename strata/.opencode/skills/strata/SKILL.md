@@ -30,8 +30,8 @@ python scripts/strata-run.py next
 
 | 命令 | 在链条里的位置 |
 |---|---|
-| `/strata-build` | 全流程入口：抽取 → 编译 → 播种 → 裁决 → 补洞 |
-| `/strata-init` | 只做抽取 + 编译 + 首播 |
+| `/strata-build` | 全流程入口：抽取 → 编译 → 撰写卡片 → 裁决 → 补洞 |
+| `/strata-init` | 只做抽取 + 编译 + 首批卡片 |
 | `/strata-review` | 裁决草稿 |
 | `/strata-fill` | 补结构空洞 |
 | `/strata-extract` | 代码大改后增量重抽 |
@@ -77,22 +77,25 @@ python scripts/strata-run.py compile
 
 ---
 
-## 阶段 2 · 播种意图层（模型的主力工作）
+## 阶段 2 · 撰写场景卡与概念卡（模型的主力和价值所在）
 
-抽取器只能从文档标题生成粗糙的「能力」卡片，真正的场景需要你来提议。
+抽取器只能从代码生成结构（符号、用例、功能点），**业务知识必须由你从文档里搬进卡片正文**。
+卡片的价值在正文，不在 frontmatter——只写 type/weight 这些结构字段的卡是废卡，
+编译器会报「正文过薄」警告。
 
 1. 读用户指定的文档（需求、设计说明、测试用例名）。
-2. 按 `references/card-format.md` 的模板，为每个可辨认的场景写一张 `intent` 卡片：
+2. 按 `references/card-format.md` 的正文模板，为每个可辨认的场景写一张 `intent` 卡：
+   - 正文写全四节：**背景 / 触发 / 主流程 / 边界与异常**
    - `status: draft`（**不许写 confirmed**）
    - `confidence: possible`（没有代码证据支撑时）
    - `source: llm-proposal`
    - `links` 里指向你判断相关的 `mechanism` 节点，**必须用已存在的 id**
-3. 每批不超过 15 张，写完让用户逐条 review。
-4. review 后重新 `compile`，把校验错误逐条修掉。
+3. 领域术语多、背景复杂的，另写 `concept` 概念页（是什么 / 为什么重要 / 常见误区），
+   用 `explains` 边连到它解释的场景或功能点。概念页是可选层，宁缺毋滥。
+4. 每批不超过 15 张，写完让用户逐条 review。
+5. review 后重新 `compile`，把校验错误和「正文过薄」警告逐条修掉。
 
 > **不要一次生成几百张。** 一次 10–15 张，用户能看完、能纠错，这才是知识库能长期活下去的原因。
-
----
 
 ## 阶段 3 · 补全（最高频，也是长期成本）
 

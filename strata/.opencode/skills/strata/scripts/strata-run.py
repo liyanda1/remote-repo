@@ -299,7 +299,7 @@ def cmd_next(root: Path) -> int:
             print(f"之后  ：{then}")
 
     if total == 0:
-        say("/strata-init", "索引是空的。", "跑完后会告诉你选哪份文档播种场景。")
+        say("/strata-init", "索引是空的。", "跑完后由模型读文档写场景卡和概念卡，写完等你裁决。")
         return 0
 
     if counts.get("intent", 0) == 0:

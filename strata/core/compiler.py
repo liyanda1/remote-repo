@@ -119,6 +119,16 @@ def compile_cards(cards_dir: Path | None = None, db_path: Path | None = None,
             continue
         seen_ids[nid] = rel
 
+        # 正文过薄检查：知识库的价值在正文（业务知识），只有结构字段等于没写。
+        # 只查人工/模型维护的三层，机器抽取的 verification/implementation 不在此列。
+        if slot in ("intent", "mechanism", "concept"):
+            blen = len((body or "").strip())
+            if blen < 60:
+                rep.warn(rel, "正文过薄",
+                         f"{slot} 卡「{fm['title']}」正文仅 {blen} 字。"
+                         f"正文要写背景/触发/流程/边界这些业务知识，"
+                         f"只有 frontmatter 的卡片没有检索价值")
+
         props = {k: v for k, v in fm.items()
                  if k not in RESERVED and k not in ("links", "evidence")}
         links = fm.get("links") or []

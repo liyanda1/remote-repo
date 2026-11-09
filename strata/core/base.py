@@ -27,8 +27,9 @@ CARDS_DIR = ROOT / "cards"
 DB_PATH = ROOT / "index.sqlite"
 GAPS_PATH = ROOT / "gaps.jsonl"
 
-SLOTS = ("intent", "mechanism", "verification", "implementation")
-EDGE_TYPES = ("composed_of", "verified_by", "exercises", "depends_on", "fulfills")
+SLOTS = ("intent", "mechanism", "verification", "implementation", "concept")
+EDGE_TYPES = ("composed_of", "verified_by", "exercises", "depends_on", "fulfills",
+              "explains", "related_to")
 STATUSES = ("draft", "proposed", "confirmed", "disputed")
 CONFIDENCES = ("certain", "likely", "possible")
 SOURCES = ("extractor", "manual", "user-answer", "llm-proposal")
@@ -40,6 +41,10 @@ SLOT_EDGE = {
     ("mechanism", "verification"): "verified_by",
     ("verification", "implementation"): "exercises",
     ("implementation", "implementation"): "depends_on",
+    # concept 是可选的背景知识层：概念页解释场景/功能点，概念之间互相关联
+    ("concept", "intent"): "explains",
+    ("concept", "mechanism"): "explains",
+    ("concept", "concept"): "related_to",
 }
 
 SCHEMA_SQL = """

@@ -341,7 +341,7 @@ agent 有自己的推理循环，会自己决定下一步做什么——这在�
 <pre><code>strata/
 ├── strata.py                    命令行入口（8 个子命令）
 ├── core/                        内核：零业务词，改它要评审
-│   ├── schema.yaml                四槽位 / 五种边 / 六类空洞 / 六个查询接口
+│   ├── schema.yaml                五槽位 / 七种边 / 六类空洞 / 六个查询接口
 │   ├── pack.schema.yaml           写领域包的契约
 │   ├── base.py                    SQLite 存储与枚举
 │   ├── compiler.py                卡片 → 索引（四类校验）
@@ -362,7 +362,7 @@ agent 有自己的推理循环，会自己决定下一步做什么——这在�
 <h3>1.3 四层：场景 · 功能 · IT/UT · 实现</h3>
 
 <p>
-四个槽位是<b>语义角色</b>，不是四张表。领域差异全部下沉到领域包，
+主链四个槽位 + 可选的概念层，都是<b>语义角色</b>，不是四张表。领域差异全部下沉到领域包，
 内核只认槽位、边、空洞和查询接口。
 </p>
 
@@ -443,12 +443,15 @@ agent 有自己的推理循环，会自己决定下一步做什么——这在�
             载体可能是 gtest、pytest、诊断脚本或 HIL，但都属于 IT/UT</td><td>千</td></tr>
     <tr><td><code>implementation</code></td><td><b>实现层</b></td><td>代码实体</td>
         <td colspan="1">符号 / 组件 —— 唯一一层与领域完全无关</td><td>万级</td></tr>
+    <tr><td><code>concept</code></td><td><b>概念层</b></td>
+        <td><b>可选</b>。背景知识页（领域概念 / 术语 / 约定），解释场景与功能点的「为什么」</td>
+        <td>回滚、A/B 分区、会话保持这类新人要补的背景；wiki 式概念页</td><td>十到百</td></tr>
   </tbody>
 </table>
 
 <p>
 <b>这张表只是示例，不是规范。</b>内核不认识「状态机」，也不认识「gtest」，
-它只认四个槽位名。具体某一层装什么、字段叫什么，由领域包决定：
+它只认槽位名。具体某一层装什么、字段叫什么，由领域包决定：
 OTA 可以把功能点定成「状态 + 事件」，诊断可以定成「序列号 + 服务」，通用 C++ 库可以定成「模块」。
 换领域只换包，不动内核，也不改这张表的语义——<b>变的只是右列的例子</b>。
 </p>
@@ -461,6 +464,15 @@ OTA 可以把功能点定成「状态 + 事件」，诊断可以定成「序列�
   <b>验证层不按测试框架分类。</b>按 gtest / pytest / 诊断脚本分，等于把工具链焊进模型，
   团队一换框架整个库就得重建。正确划分只有一条线：<b>这条用例是 IT 还是 UT</b>，
   框架、语言、跑在台架上还是本机，都只是它的载体。
+</div>
+
+<div class="callout">
+  <span class="t">概念层：参考 LLM-wiki 的概念页</span>
+  业务背景复杂的领域（汽车、金融、医疗），光有「场景 → 代码」的链路不够——
+  新人和模型还得懂「什么是回滚」「为什么要 A/B 分区」这类背景，否则读卡片照样一头雾水。
+  概念页就是为这个准备的：<b>一张页解释一个概念</b>，正文写「是什么 / 为什么重要 / 常见误区」，
+  用 <code>explains</code> 边连到它解释的场景或功能点。它是可选层：
+  领域简单就不建，建了也不参与空洞检测，不给治理添负担。
 </div>
 
 <p>
@@ -484,7 +496,7 @@ OTA 可以把功能点定成「状态 + 事件」，诊断可以定成「序列�
 
 <h2>2 · 数据模型</h2>
 
-<h3>2.1 五种边</h3>
+<h3>2.1 七种边</h3>
 
 <p>边是这套系统全部价值的载体。判断一条边能不能入库，只问一句：<b>它凭什么存在？</b></p>
 
@@ -496,6 +508,8 @@ OTA 可以把功能点定成「状态 + 事件」，诊断可以定成「序列�
     <tr><td><code>exercises</code></td><td><code>verification → implementation</code></td><td>用例执行了哪些代码</td><td>覆盖率报告（首选）/ 调用匹配</td><td><span class="tag t-certain">确定</span> / <span class="tag t-likely">很可能</span></td></tr>
     <tr><td><code>depends_on</code></td><td><code>implementation → implementation</code></td><td>调用 / 引用 / 继承</td><td>AST、ELF 符号交叉</td><td><span class="tag t-certain">确定</span></td></tr>
     <tr><td><code>fulfills</code></td><td><code>intent → intent</code></td><td>跨领域串联</td><td>人工声明</td><td><span class="tag t-certain">确定</span></td></tr>
+    <tr><td><code>explains</code></td><td><code>concept → intent / mechanism</code></td><td>概念页解释哪个场景 / 功能点</td><td>模型提议 + 审核</td><td><span class="tag t-possible">可能</span></td></tr>
+    <tr><td><code>related_to</code></td><td><code>concept → concept</code></td><td>概念之间的关联</td><td>模型提议 + 审核</td><td><span class="tag t-possible">可能</span></td></tr>
   </tbody>
 </table>
 
@@ -726,7 +740,7 @@ python .opencode/skills/strata/scripts/strata-run.py home set /path/to/strata
   <rect x="40" y="84" width="230" height="86" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
   <text x="58" y="108" font-size="12.5" font-family="Consolas,monospace" font-weight="700" fill="#1d4ed8">/strata-init</text>
   <text x="58" y="130" font-size="10.5" fill="#4b6bb5">where → extract → compile</text>
-  <text x="58" y="148" font-size="10.5" fill="#4b6bb5">再读文档，播 12 张草稿卡</text>
+  <text x="58" y="148" font-size="10.5" fill="#4b6bb5">再读文档，写 12 张草稿卡</text>
   <text x="58" y="164" font-size="10" fill="#6b85c0">产出：索引 + 待审草稿</text>
 
   <line x1="274" y1="128" x2="306" y2="128" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#f5a)"/>
@@ -782,13 +796,13 @@ python .opencode/skills/strata/scripts/strata-run.py home set /path/to/strata
     <tr><td><code>/strata-build</code></td><td><b>第一次建库，只敲这一条</b></td>
         <td>依次驱动下面三步，每步之间把真实输出给你看，需要裁决时才停下问你</td></tr>
     <tr><td><code>/strata-init</code></td><td>想单独重跑抽取</td><td><code>where</code> → <code>extract</code> → <code>compile</code>，
-        然后模型读文档播种场景卡</td></tr>
+        然后模型读文档撰写场景卡</td></tr>
     <tr><td><code>/strata-extract</code></td><td>代码大改之后</td><td><code>extract</code> → <code>compile</code> → <code>holes</code>，
         模型对比前后数字找异常</td></tr>
     <tr><td><code>/strata-impact</code></td><td>每次动代码之前</td><td><code>git diff --stat</code> → <code>impact-diff</code>，
         模型按三档汇报并给必跑测试清单</td></tr>
     <tr><td><code>/strata-fill</code></td><td>每周治理</td><td><code>holes</code> → 逐条提问 → 改卡片 → <code>compile</code></td></tr>
-    <tr><td><code>/strata-review</code></td><td>模型播种之后</td><td><code>drafts</code> → 逐张裁决 → <code>compile</code></td></tr>
+    <tr><td><code>/strata-review</code></td><td>模型写完之后</td><td><code>drafts</code> → 逐张裁决 → <code>compile</code></td></tr>
     <tr><td><code>/strata-status</code></td><td>想看库健不健康</td><td><code>where</code> + <code>stat</code> + <code>holes</code></td></tr>
   </tbody>
 </table>
@@ -828,7 +842,12 @@ $ python .opencode/skills/strata/scripts/strata-run.py compile
 整个库都不可信</b>。这一步是强制的。
 </p>
 
-<p><b>第二步 · 播种场景</b>（模型的主力工作）。它读你指定的文档，一次产出不超过 12 张草稿卡：</p>
+<p><b>第二步 · 撰写场景卡与概念卡</b>（模型的主力工作，也是知识库的价值所在）。
+它读你指定的文档，把业务知识写进卡片正文——<b>frontmatter 负责「连得上」，正文负责「看得懂」</b>。
+场景卡正文必须写全四节（背景 / 触发 / 主流程 / 边界与异常）；术语多的领域另写概念页
+（是什么 / 为什么重要 / 常见误区），用 <code>explains</code> 边挂到它解释的场景上。
+只写结构字段不写正文的卡是废卡，编译器会报「正文过薄」警告，逼着补全。
+一次产出不超过 12 张草稿卡：</p>
 
 <pre><code><span class="c-com">---</span>
 <span class="c-key">id</span>: ota.scn.power-loss-recovery
@@ -865,7 +884,7 @@ $ python .opencode/skills/strata/scripts/strata-run.py compile
 </p>
 
 <div class="callout ok">
-  <span class="t">为什么一次只播 12 张</span>
+  <span class="t">为什么一次只写 12 张</span>
   批量生成几百张「语义漂亮但挂不上任何代码」的卡片，是这类系统最常见的死法——
   你会在两周里手工接线，然后放弃。小批量 + 逐条 review，用户能看完、能纠错，
   这才是知识库能长期活下去的原因。
@@ -1211,23 +1230,33 @@ http://&lt;主机&gt;:8760/?token=&lt;token&gt;    <span class="c-com"># 现场�
 <table>
   <thead><tr><th style="width:150px">操作</th><th>做什么</th></tr></thead>
   <tbody>
-    <tr><td>浏览全图</td><td>四列分层（场景 → 功能点 → 用例 → 代码）。代码列按文件折叠、
-        用例列按所属功能点折叠，默认只有约 80 个元素；点胶囊展开，或「全部展开」看完整 1506 个节点</td></tr>
+    <tr><td>浏览全图</td><td>五列分层（概念 → 场景 → 功能点 → 用例 → 代码；没有概念卡时自动退回四列）。
+        功能点列按所属场景折叠、用例列按所属功能点折叠（功能点多于 40 时再按场景包一层）、
+        代码列按文件折叠（文件多于 40 时按目录包一层）——<b>默认视图只有几十个胶囊</b>，
+        点胶囊逐层展开，或「全部展开」看完整节点</td></tr>
     <tr><td>点节点</td><td>右侧详情：属性、证据位置、上下游邻居（可继续点进去跳转）；
         画布上高亮它的邻居与连线，其余淡出</td></tr>
     <tr><td>搜索</td><td>即搜即高亮并自动定位；支持 <code>slot:</code> / <code>conf:</code> /
         <code>status:</code> / <code>file:</code> 前缀组合</td></tr>
     <tr><td>看空洞</td><td>文件胶囊上的橙色数字就是「该文件里没被任何用例覆盖的符号数」；
-        「只看孤儿」一键筛出全部 703 个无连线节点</td></tr>
-    <tr><td>点亮执行边</td><td>用例 → 代码的执行关系有 793 条，默认收起；选中节点时只点亮与它相关的那部分，
+        「只看孤儿」一键筛出全部无连线节点</td></tr>
+    <tr><td>点亮执行边</td><td>用例 → 代码的执行关系量大，默认收起；选中节点时只点亮与它相关的那部分，
         也可以用「执行边」开关全量打开</td></tr>
-    <tr><td>分享视角</td><td>链接即状态：<code>#cpp.sym.format_to</code> 直达某个节点，
-        <code>#q=chrono</code> 直达一次搜索，<code>?theme=dark</code> 锁深色</td></tr>
+    <tr><td>分享视角</td><td>链接即状态：<code>#节点id</code> 直达（折叠组自动展开），
+        <code>#q=关键词</code> 直达一次搜索，<code>?theme=dark</code> 锁深色</td></tr>
   </tbody>
 </table>
 
 <p>
-两个取舍说明：<b>执行边默认收起</b>——793 条执行关系聚合并画出来就是一张糊掉的网，藏起来之后
+大库不会卡，靠的是三件事（实测 1.5 万节点 / 2.5 万边的合成库验证）：
+<b>① 分层折叠</b>——上万节点折叠后默认只有几十个胶囊，图永远是一张「结构图」而不是「点云」；
+<b>② 视口虚拟化</b>——只有落在当前视野里的条目才创建 DOM，平移缩放时按帧增删，
+元素总数始终被屏幕大小限住，与库的规模无关；
+<b>③ 连线聚合与裁剪</b>——同对条目之间的多条边合并成一条，画布外的连线不画。
+</p>
+
+<p>
+两个取舍说明：<b>执行边默认收起</b>——数千条执行关系聚合并画出来就是一张糊掉的网，藏起来之后
 「结构归结构、命中归命中」，选中谁才点亮谁；<b>普通关键字不搜文件名</b>——否则搜一次
 chrono 会把 <code>chrono.h</code> 里 144 个符号全部拽进结果，视图被撑到看不清，找文件请用
 <code>file:</code> 前缀。

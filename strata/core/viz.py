@@ -13,8 +13,10 @@ from pathlib import Path
 
 from . import base
 
-# 前端只认这四种颜色，顺序不能变（页面里按索引取色）
-SLOT_ORDER = list(base.SLOTS)
+# 前端展示顺序：概念层在最左（它的 explains 边指向右侧的场景/功能点），
+# 主链四层依次向右。没有 concept 数据时前端自动跳过该列。
+DISPLAY_ORDER = ("concept", "intent", "mechanism", "verification", "implementation")
+SLOT_ORDER = [s for s in DISPLAY_ORDER if s in base.SLOTS]
 
 
 def _props(raw: str | None) -> dict:

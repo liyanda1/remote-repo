@@ -36,6 +36,11 @@ slots:
       line: { type: int }
       line_end: { type: int }   # 符号体的结束行，供按行范围定位改动点
       locations: { type: list } # 同名符号的全部出现位置（声明 + 各文件定义）
+  concept:
+    label: 概念
+    id_prefix: cpp.cpt
+    fields:
+      tags: { type: list }      # 概念标签，如 [内存安全, 编译期]
 
 mechanism_key: [module]
 

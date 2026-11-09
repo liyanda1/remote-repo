@@ -4,8 +4,9 @@
 
 version: 1
 
-# ---------------------------------------------------------------- 四个语义槽位
+# ---------------------------------------------------------------- 语义槽位
 # 槽位是"语义角色"，不是具体形态。叫什么、装什么，由领域包决定。
+# 前四个是主链（场景→功能→验证→代码）；concept 是可选的背景知识层。
 slots:
   intent:
     role: 人想达成什么（场景 / 用例 / 需求）
@@ -23,9 +24,14 @@ slots:
     role: 代码实体（符号 / 组件）
     scale: 万到百万
     mutability: 最高频，机器生成
+  concept:
+    role: 背景知识页（领域概念 / 术语 / 约定），解释场景与功能点的"为什么"
+    scale: 十到百
+    mutability: 低频，人工维护
+    optional: true          # 主链四槽位必建；概念层按需补，不影响空洞检测
 
 # ---------------------------------------------------------------- 边类型
-# 只允许这五种，跨领域统一。新增边类型属于改内核，需要评审。
+# 只允许这七种，跨领域统一。新增边类型属于改内核，需要评审。
 edges:
   - name: composed_of        # intent -> mechanism  一个意图由哪几个功能点拼成
     from: intent
@@ -43,6 +49,12 @@ edges:
   - name: fulfills           # intent -> intent  跨领域串联（如 整车升级 -> OTA / 诊断刷写）
     from: intent
     to: intent
+  - name: explains           # concept -> intent / concept -> mechanism  概念页解释它
+    from: concept
+    to: [intent, mechanism]
+  - name: related_to         # concept -> concept  概念之间的关联
+    from: concept
+    to: concept
 
 # ---------------------------------------------------------------- 证据账本
 # 任何边入库必须带 provenance，否则拒绝写入。这是整套系统可信度的地基。
