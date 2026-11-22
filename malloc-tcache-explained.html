@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>内存分配器是怎么工作的：chunk、bin 与 tcache</title>
+<style>
+  :root{
+    --bg:#ffffff; --page:#faf9f6; --surface:#f1efe8; --ink:#1f1f1e; --muted:#5f5e5a;
+    --line:#e3e1da; --blue50:#e6f1fb; --blue100:#b5d4f4; --blue600:#185fa5; --blue800:#0c447c;
+    --red50:#fcebeb; --red100:#f7c1c1; --red600:#a32d2d; --red800:#791f1f;
+    --green50:#eaf3de; --green100:#c0dd97; --green600:#3b6d11;
+    --amber50:#faeeda; --amber100:#fac775; --amber800:#854f0b;
+    --gray50:#f1efe8; --gray100:#d3d1c7; --gray600:#5f5e5a; --gray800:#2c2c2a;
+    --mono:ui-monospace,Consolas,"Cascadia Code",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.75}
+  .wrap{max-width:980px;margin:0 auto;padding:32px 28px 80px}
+  header.top{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:22px 26px;margin-bottom:22px}
+  h1{font-size:24px;font-weight:600;margin:0 0 8px;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:14px;margin:0}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:22px}
+  .card{background:var(--blue50);border:1px solid var(--blue100);border-radius:10px;padding:14px 16px;font-size:13px;line-height:1.6}
+  .card b{display:block;color:var(--blue800);font-size:14px;margin-bottom:6px}
+  .card.green{background:var(--green50);border-color:var(--green100)}
+  .card.green b{color:var(--green600)}
+  .card.amber{background:var(--amber50);border-color:var(--amber100)}
+  .card.amber b{color:var(--amber800)}
+  section{scroll-margin-top:18px}
+  html{scroll-behavior:smooth}
+  .float-toggle{position:fixed;right:26px;bottom:26px;z-index:1001;display:flex;align-items:center;gap:8px;background:var(--blue600);color:#fff;border:1px solid var(--blue800);border-radius:26px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgba(12,68,124,.28);letter-spacing:.3px}
+  .float-toggle:hover{background:var(--blue800)}
+  .float-toggle .ic{font-size:15px;line-height:1}
+  .float-panel{display:none;position:fixed;right:26px;bottom:76px;width:292px;height:min(72vh,580px);z-index:1000;background:var(--bg);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 36px rgba(31,31,30,.18);flex-direction:column}
+  .float-panel.open{display:flex}
+  .float-hd{flex:none;display:flex;align-items:center;justify-content:flex-end;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--line);border-radius:12px 12px 0 0;font-size:13px;font-weight:600;cursor:move;user-select:none}
+  .float-close{background:none;border:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer;padding:0 2px}
+  .float-close:hover{color:var(--red800)}
+  .float-body{flex:1;min-height:0;overflow-y:auto;padding:12px 8px;font-size:12.5px}
+  .float-body .grp{padding:9px 10px 4px;color:var(--muted);font-size:11.5px;font-weight:600;letter-spacing:.3px}
+  .float-body .grp.first{padding-top:2px}
+  .float-body a{display:block;padding:5px 10px 5px 12px;border-radius:6px;border-left:2px solid transparent;color:var(--muted);text-decoration:none;line-height:1.45}
+  .float-body a:hover{background:var(--surface);color:var(--blue800)}
+  .float-body a.active{background:var(--blue50);border-left-color:var(--blue600);color:var(--blue800);font-weight:600}
+  .float-body .foot{margin-top:10px;padding:10px 10px 2px;border-top:1px dashed var(--line)}
+  .float-body .foot a{color:var(--red800);font-weight:600;padding:4px 0}
+  .float-resize{position:absolute;right:2px;bottom:2px;width:18px;height:18px;cursor:nwse-resize;background:repeating-linear-gradient(135deg,transparent 0 4px,var(--blue600) 4px 5px);opacity:.5;border-radius:0 0 10px 0}
+  .float-resize:hover{opacity:1}
+  section{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:26px 30px;margin-bottom:20px}
+  h2{font-size:19px;font-weight:600;margin:0 0 6px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  h2 .n{color:var(--blue600);font-family:var(--mono);font-size:15px;margin-right:10px}
+  h3{font-size:15px;font-weight:600;margin:22px 0 8px;color:var(--blue800)}
+  p{margin:10px 0}
+  .lead{background:var(--blue50);border-left:3px solid var(--blue600);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0;font-size:14px}
+  .warn{background:var(--red50);border-left:3px solid var(--red600);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0;font-size:14px}
+  .note{background:var(--green50);border-left:3px solid var(--green600);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0;font-size:14px}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th{background:var(--surface);text-align:left;padding:9px 12px;border:1px solid var(--line);font-weight:600;color:var(--gray800)}
+  td{padding:9px 12px;border:1px solid var(--line);vertical-align:top}
+  tbody tr:nth-child(even){background:#fcfcfa}
+  code{font-family:var(--mono);font-size:12.5px;background:var(--surface);padding:1px 5px;border-radius:4px;color:var(--blue800)}
+  pre{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--blue600);border-radius:0 8px 8px 0;padding:16px 18px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65;margin:14px 0}
+  pre code{background:none;padding:0;color:var(--ink)}
+  .figure{margin:18px 0 6px;background:#fcfcfa;border:1px solid var(--line);border-radius:10px;padding:14px}
+  .figure svg{display:block;width:100%;height:auto}
+  .cap{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .tag{display:inline-block;font-size:11.5px;font-family:var(--mono);padding:1px 7px;border-radius:5px;background:var(--blue50);color:var(--blue800);border:1px solid var(--blue100)}
+  .tag.bad{background:var(--red50);color:var(--red800);border-color:var(--red100)}
+  .tag.ok{background:var(--green50);color:var(--green600);border-color:var(--green100)}
+  ul,ol{padding-left:22px;margin:10px 0}
+  li{margin:5px 0}
+  .def{display:grid;grid-template-columns:170px 1fr;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:14px 0;font-size:13.5px}
+  .def .k{background:var(--blue50);color:var(--blue800);font-family:var(--mono);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .def .v{padding:10px 14px;border-bottom:1px solid var(--line)}
+  .def .k:last-of-type,.def .v:last-of-type{border-bottom:none}
+  footer{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px;margin-top:8px;line-height:1.8}
+  @media print{body{background:#fff}.wrap{max-width:none;padding:0}section,header.top{break-inside:avoid;border-color:#ccc}.float-toggle,.float-panel{display:none}}
+  @media (max-width:760px){.cards{grid-template-columns:1fr}.wrap{padding:16px 12px 50px}section{padding:18px 16px}.def{grid-template-columns:1fr}.def .k{border-bottom:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>内存分配器是怎么工作的</h1>
+  <p class="sub">chunk、bin 与 tcache：从一次 malloc 到一次 free，正面讲清分配器的机制</p>
+</header>
+
+
+
+<section id="s1">
+  <h2><span class="n">01</span>分配器要解决的三个问题</h2>
+  <p>抛开所有名词，glibc 面对的堆就是一大段连续字节。程序不断提出要求：给我 24 字节、给我 100 字节、这块我不用了……分配器必须回答三个问题。后面所有设计都是为了回答它们。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 290" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>分配器的三个问题与三种机制</title>
+      <desc>请求任意大小对应按档切块的 chunk；记住空闲块对应把空闲块自己串成链表；查找要快对应每线程私有的 tcache 缓存。</desc>
+      <defs><marker id="c1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text x="40" y="26" font-size="12" fill="#5f5e5a" font-family="sans-serif">问题</text>
+      <text x="400" y="26" font-size="12" fill="#5f5e5a" font-family="sans-serif">机制</text>
+      <rect x="40" y="40" width="270" height="56" rx="8" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="56" y="62" font-size="12.5" font-weight="600" fill="#2c2c2a" font-family="sans-serif">① 请求大小各不相同</text>
+      <text x="56" y="82" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">24 字节、100 字节、1 字节……</text>
+      <path d="M316 68 L376 68" fill="none" stroke="#185fa5" stroke-width="1.5" marker-end="url(#c1)"/>
+      <rect x="380" y="40" width="260" height="56" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="396" y="62" font-size="12.5" font-weight="600" fill="#0c447c" font-family="sans-serif">按固定档位切块 = chunk</text>
+      <text x="396" y="82" font-size="11.5" fill="#185fa5" font-family="sans-serif">大小向上对齐到 16 的倍数</text>
+      <rect x="40" y="112" width="270" height="56" rx="8" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="56" y="134" font-size="12.5" font-weight="600" fill="#2c2c2a" font-family="sans-serif">② 释放后要记住哪块空着</text>
+      <text x="56" y="154" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">不能每次都问操作系统</text>
+      <path d="M316 140 L376 140" fill="none" stroke="#185fa5" stroke-width="1.5" marker-end="url(#c1)"/>
+      <rect x="380" y="112" width="260" height="56" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="396" y="134" font-size="12.5" font-weight="600" fill="#0c447c" font-family="sans-serif">空闲块自己串成链表</text>
+      <text x="396" y="154" font-size="11.5" fill="#185fa5" font-family="sans-serif">next 指针写在空闲块内部</text>
+      <rect x="40" y="184" width="270" height="56" rx="8" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="56" y="206" font-size="12.5" font-weight="600" fill="#2c2c2a" font-family="sans-serif">③ 每次查链表太慢</text>
+      <text x="56" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">多线程还会争抢锁</text>
+      <path d="M316 212 L376 212" fill="none" stroke="#185fa5" stroke-width="1.5" marker-end="url(#c1)"/>
+      <rect x="380" y="184" width="260" height="56" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="396" y="206" font-size="12.5" font-weight="600" fill="#3b6d11" font-family="sans-serif">tcache 每线程快速缓存</text>
+      <text x="396" y="226" font-size="11.5" fill="#3b6d11" font-family="sans-serif">无锁、链头直接取放</text>
+      <text x="40" y="270" font-size="12" fill="#a32d2d" font-family="sans-serif">记住这三条对应关系，后面每个名词都能归位：chunk 解决①，bin/链表解决②，tcache 解决③。</text>
+    </svg>
+    <div class="cap">图 1 · 三个问题对应三种机制。tcache 不是另一套内存，而是"从空闲链表里切出来的一小段快速通道"。</div>
+  </div>
+</section>
+
+<section id="s5">
+  <h2><span class="n">02</span>malloc 的完整路径</h2>
+  <p>调用 <code>malloc(n)</code> 后，glibc 先把 n 换算成 chunk 大小，然后从最快的通道开始一路往下找，直到拿到一块内存。绝大多数小请求在第 1 站就返回了；只有缓存空了才往下走。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 470" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>malloc 的查找顺序</title>
+      <desc>先算 chunk 大小，再依次查 tcache、fastbin、smallbin、unsorted bin、largebin、top chunk，最后 sysmalloc 向内核扩展。</desc>
+      <defs><marker id="c5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <rect x="150" y="38" width="380" height="46" rx="8" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="340" y="58" font-size="12.5" font-weight="600" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">malloc(n)：nb = 对齐(n + 8, 16)</text>
+      <text x="340" y="76" font-size="11" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">算出要哪一档的 chunk</text>
+      <path d="M340 86 L340 100" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#c5)"/>
+      <rect x="150" y="104" width="380" height="46" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="1"/>
+      <text x="340" y="124" font-size="12.5" font-weight="600" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">① tcache：该档 counts &gt; 0 ?</text>
+      <text x="340" y="142" font-size="11" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">取链头、counts--、key 清 NULL → 返回（最快）</text>
+      <path d="M340 152 L340 166" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#c5)"/>
+      <text x="540" y="164" font-size="11" fill="#888780" font-family="sans-serif">空才继续</text>
+      <rect x="150" y="170" width="380" height="46" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="340" y="190" font-size="12.5" font-weight="600" fill="#0c447c" text-anchor="middle" font-family="sans-serif">② fastbin：该档有精确匹配 ?</text>
+      <text x="340" y="208" font-size="11" fill="#185fa5" text-anchor="middle" font-family="sans-serif">小尺寸单向链表，取出返回</text>
+      <path d="M340 218 L340 232" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#c5)"/>
+      <rect x="150" y="236" width="380" height="46" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="340" y="256" font-size="12.5" font-weight="600" fill="#0c447c" text-anchor="middle" font-family="sans-serif">③ smallbin / unsorted bin</text>
+      <text x="340" y="274" font-size="11" fill="#185fa5" text-anchor="middle" font-family="sans-serif">精确匹配或遍历分流，必要时切分大块</text>
+      <path d="M340 284 L340 298" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#c5)"/>
+      <rect x="150" y="302" width="380" height="46" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="340" y="322" font-size="12.5" font-weight="600" fill="#0c447c" text-anchor="middle" font-family="sans-serif">④ largebin → top chunk</text>
+      <text x="340" y="340" font-size="11" fill="#185fa5" text-anchor="middle" font-family="sans-serif">大块最佳适配；还不够就从堆顶切</text>
+      <path d="M340 352 L340 366" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#c5)"/>
+      <rect x="150" y="370" width="380" height="46" rx="8" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+      <text x="340" y="390" font-size="12.5" font-weight="600" fill="#854f0b" text-anchor="middle" font-family="sans-serif">⑤ sysmalloc：堆不够了</text>
+      <text x="340" y="408" font-size="11" fill="#854f0b" text-anchor="middle" font-family="sans-serif">brk / mmap 系统调用向内核扩展堆</text>
+      <text x="40" y="446" font-size="12" fill="#a32d2d" font-family="sans-serif">检查点分布：每一站在取块时都会校验该块的 size / 链表关系；不一致就在"这一次调用点"报错 abort。</text>
+    </svg>
+    <div class="cap">图 2 · malloc 查找顺序。前四站都在用户态操作空闲链表，只有最后一站进内核。你要理解 double free，只需盯住第 ① 站。</div>
+  </div>
+</section>
+
+<section id="s6">
+  <h2><span class="n">03</span>free 的完整路径</h2>
+  <p><code>free(p)</code> 做的事，本质是把 p 对应的 chunk 挂回空闲体系。它会先做一组基础校验，然后优先塞进 tcache——只要该档没满。这一步就是 <code>tcache_put</code>，也是整个机制里最关键的函数。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 390" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>free 的处理顺序</title>
+      <desc>free 先做指针对齐和 size 合法性检查，然后若 tcache 该档未满就 tcache_put 写入 next 和 key 并返回，否则落入 fastbin 或合并后进入 unsorted bin。</desc>
+      <defs><marker id="c6" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <rect x="150" y="38" width="380" height="46" rx="8" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="340" y="58" font-size="12.5" font-weight="600" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">free(p)：基础校验</text>
+      <text x="340" y="76" font-size="11" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">指针对齐、size ≥ 32 且对齐、下一块 size 合法</text>
+      <path d="M340 86 L340 100" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#c6)"/>
+      <rect x="150" y="104" width="380" height="46" rx="8" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+      <text x="340" y="124" font-size="12.5" font-weight="600" fill="#854f0b" text-anchor="middle" font-family="sans-serif">mmap 分配的块 ?</text>
+      <text x="340" y="142" font-size="11" fill="#854f0b" text-anchor="middle" font-family="sans-serif">是 → munmap 直接归还内核</text>
+      <path d="M340 152 L340 166" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#c6)"/>
+      <text x="540" y="164" font-size="11" fill="#888780" font-family="sans-serif">不是则继续</text>
+      <rect x="150" y="170" width="380" height="58" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="1"/>
+      <text x="340" y="192" font-size="12.5" font-weight="600" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">tcache 该档 counts &lt; 7 ?</text>
+      <text x="340" y="211" font-size="11" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">tcache_put：e-&gt;next = 旧链头，e-&gt;key = tcache</text>
+      <text x="340" y="225" font-size="11" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">counts++，该档链头 = 此块 → 直接返回</text>
+      <path d="M340 230 L340 244" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#c6)"/>
+      <text x="540" y="242" font-size="11" fill="#888780" font-family="sans-serif">满了才继续</text>
+      <rect x="150" y="248" width="380" height="46" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="340" y="268" font-size="12.5" font-weight="600" fill="#0c447c" text-anchor="middle" font-family="sans-serif">否则：进 fastbin 或合并</text>
+      <text x="340" y="286" font-size="11" fill="#185fa5" text-anchor="middle" font-family="sans-serif">与前后空闲块合并后放入 unsorted bin</text>
+      <rect x="40" y="316" width="600" height="30" rx="6" fill="#fcebeb" stroke="#f7c1c1" stroke-width="0.5"/>
+      <text x="52" y="336" font-size="12" fill="#791f1f" font-family="sans-serif">注意：free 不会清零内存，也不会改动你手里的 p —— 它只改 chunk 状态和那 16 字节元数据。</text>
+      <rect x="40" y="352" width="600" height="30" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="52" y="372" font-size="12" fill="#2c2c2a" font-family="sans-serif">所以"释放后 p 还指向原地址"是接口语义的直接结果，不是异常现象。</text>
+    </svg>
+    <div class="cap">图 3 · free 路径。重点看 tcache_put 那一步：它把 next/key 写进用户区前 16 字节——这正是下一节实例里反复发生的事。</div>
+  </div>
+</section>
+
+<section id="s7">
+  <h2><span class="n">04</span>七步实例：看块怎么流动</h2>
+  <p>现在用一个完整例子把所有机制串起来。假设堆里还没有空闲块，连续对同一大小（<code>malloc(24)</code>，即 0x20 档）做三次申请、两次释放、两次申请。跟踪三个 chunk A/B/C 和 tcache[0] 的变化。</p>
+<h3>逐帧看：块和链怎么变化</h3>
+<div class="figure">
+<svg viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>七步实例 第1步：p1 = malloc(24)</title>
+<desc>tcache[0] 为空，从 top chunk 切出 0x20 块 A</desc>
+<defs><marker id="c7f" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="14" width="18" height="18" rx="5" fill="#185fa5"/>
+<text x="49" y="27" font-size="11.5" fill="#ffffff" text-anchor="middle" font-weight="600" font-family="sans-serif">1</text>
+<text x="66" y="27" font-size="12.5" fill="#0c447c" font-weight="600" font-family="sans-serif">p1 = malloc(24)　—　tcache[0] 为空，从 top chunk 切出 0x20 块 A</text>
+<text x="42" y="47" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">三个 chunk 的真实结构（灰=头，蓝=使用中，绿=空闲在链）</text>
+<text x="42" y="79" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p1</text>
+<rect x="96" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="85" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="85" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="56" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="58" x2="376" y2="90" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="58" x2="508" y2="90" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">新切块</text>
+<rect x="96" y="96" width="704" height="36" rx="5" fill="#fcfcfa" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="104" y="119" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">B：尚未分配</text>
+<rect x="96" y="136" width="704" height="36" rx="5" fill="#fcfcfa" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="104" y="159" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">C：尚未分配</text>
+<text x="42" y="196" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">tcache[0] 当前链：</text>
+<rect x="42" y="205" width="430" height="32" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="52" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">链头 = NULL　tcache[0] 为空</text>
+<text x="500" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">counts = 0</text>
+<rect x="42" y="252" width="600" height="36" rx="6" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="50" y="275" font-size="10.8" fill="#2c2c2a" font-family="sans-serif">本步变化：A 刚从堆顶切出，是使用中块；用户区前 16B 此刻只是业务数据，还没有 next/key 的含义。</text>
+</svg>
+<div class="cap">图 4 · 第 1 帧（共 7 帧）　p1 = malloc(24)：tcache[0] 为空，从 top chunk 切出 0x20 块 A</div>
+</div>
+<div class="figure">
+<svg viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>七步实例 第2步：p2 = malloc(24)</title>
+<desc>tcache 仍空，从堆顶相邻位置再切出 B</desc>
+<defs><marker id="c7f" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="14" width="18" height="18" rx="5" fill="#185fa5"/>
+<text x="49" y="27" font-size="11.5" fill="#ffffff" text-anchor="middle" font-weight="600" font-family="sans-serif">2</text>
+<text x="66" y="27" font-size="12.5" fill="#0c447c" font-weight="600" font-family="sans-serif">p2 = malloc(24)　—　tcache 仍空，从堆顶相邻位置再切出 B</text>
+<text x="42" y="47" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">三个 chunk 的真实结构（灰=头，蓝=使用中，绿=空闲在链）</text>
+<text x="42" y="79" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p1</text>
+<rect x="96" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="85" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="85" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="56" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="58" x2="376" y2="90" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="58" x2="508" y2="90" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="42" y="119" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p2</text>
+<rect x="96" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="125" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="125" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="96" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="98" x2="376" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="98" x2="508" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">新切块</text>
+<rect x="96" y="136" width="704" height="36" rx="5" fill="#fcfcfa" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="104" y="159" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">C：尚未分配</text>
+<text x="42" y="196" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">tcache[0] 当前链：</text>
+<rect x="42" y="205" width="430" height="32" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="52" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">链头 = NULL　tcache[0] 为空</text>
+<text x="500" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">counts = 0</text>
+<rect x="42" y="252" width="600" height="36" rx="6" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="50" y="275" font-size="10.8" fill="#2c2c2a" font-family="sans-serif">本步变化：再切出 B，A/B 都是使用中块，p1 与 p2 是两个不同的地址。tcache 依然为空。</text>
+</svg>
+<div class="cap">图 4 · 第 2 帧（共 7 帧）　p2 = malloc(24)：tcache 仍空，从堆顶相邻位置再切出 B</div>
+</div>
+<div class="figure">
+<svg viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>七步实例 第3步：p3 = malloc(24)</title>
+<desc>从堆顶再切出 C，三个块都在使用中</desc>
+<defs><marker id="c7f" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="14" width="18" height="18" rx="5" fill="#185fa5"/>
+<text x="49" y="27" font-size="11.5" fill="#ffffff" text-anchor="middle" font-weight="600" font-family="sans-serif">3</text>
+<text x="66" y="27" font-size="12.5" fill="#0c447c" font-weight="600" font-family="sans-serif">p3 = malloc(24)　—　从堆顶再切出 C，三个块都在使用中</text>
+<text x="42" y="47" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">三个 chunk 的真实结构（灰=头，蓝=使用中，绿=空闲在链）</text>
+<text x="42" y="79" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p1</text>
+<rect x="96" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="85" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="85" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="56" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="58" x2="376" y2="90" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="58" x2="508" y2="90" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="42" y="119" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p2</text>
+<rect x="96" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="125" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="125" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="96" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="98" x2="376" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="98" x2="508" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="42" y="159" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p3</text>
+<rect x="96" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="165" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="165" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="136" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="138" x2="376" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="138" x2="508" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">新切块</text>
+<text x="42" y="196" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">tcache[0] 当前链：</text>
+<rect x="42" y="205" width="430" height="32" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="52" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">链头 = NULL　tcache[0] 为空</text>
+<text x="500" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">counts = 0</text>
+<rect x="42" y="252" width="600" height="36" rx="6" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="50" y="275" font-size="10.8" fill="#2c2c2a" font-family="sans-serif">本步变化：三个块都在使用中，p1/p2/p3 各指向一块独立地址。此刻还没有任何块进入空闲链。</text>
+</svg>
+<div class="cap">图 4 · 第 3 帧（共 7 帧）　p3 = malloc(24)：从堆顶再切出 C，三个块都在使用中</div>
+</div>
+<div class="figure">
+<svg viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>七步实例 第4步：free(p1)</title>
+<desc>把 A 挂进 tcache[0]，成为链头</desc>
+<defs><marker id="c7f" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="14" width="18" height="18" rx="5" fill="#185fa5"/>
+<text x="49" y="27" font-size="11.5" fill="#ffffff" text-anchor="middle" font-weight="600" font-family="sans-serif">4</text>
+<text x="66" y="27" font-size="12.5" fill="#0c447c" font-weight="600" font-family="sans-serif">free(p1)　—　把 A 挂进 tcache[0]，成为链头</text>
+<text x="42" y="47" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">三个 chunk 的真实结构（灰=头，蓝=使用中，绿=空闲在链）</text>
+<text x="42" y="79" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p1</text>
+<rect x="96" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="85" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="85" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="56" width="400" height="36" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<line x1="376" y1="58" x2="376" y2="90" stroke="#3b6d11" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="58" x2="508" y2="90" stroke="#3b6d11" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="85" font-size="10.5" fill="#791f1f" text-anchor="middle" font-weight="600" font-family="sans-serif">NULL</text>
+<text x="442.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="85" font-size="10.5" fill="#791f1f" text-anchor="middle" font-weight="600" font-family="sans-serif">tcache</text>
+<text x="576.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="85" font-size="10.5" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">旧数据还在</text>
+<text x="42" y="119" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p2</text>
+<rect x="96" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="125" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="125" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="96" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="98" x2="376" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="98" x2="508" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="42" y="159" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p3</text>
+<rect x="96" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="165" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="165" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="136" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="138" x2="376" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="138" x2="508" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="42" y="196" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">tcache[0] 当前链：</text>
+<rect x="42" y="205" width="52" height="32" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="68" y="226" font-size="11" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">链头</text>
+<path d="M94 221 L120 221" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#c7f)"/>
+<rect x="122" y="205" width="54" height="32" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="149" y="226" font-size="11.5" fill="#2b5c0b" text-anchor="middle" font-weight="600" font-family="sans-serif">A</text>
+<path d="M176 221 L200 221" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#c7f)"/>
+<text x="206" y="226" font-size="11" fill="#5f5e5a" font-family="sans-serif">NULL</text>
+<text x="500" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">counts = 1</text>
+<rect x="42" y="252" width="600" height="36" rx="6" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="50" y="275" font-size="10.8" fill="#2c2c2a" font-family="sans-serif">本步变化：free 在 A 用户区写 next=NULL、key=tcache，A 变成空闲链头。p1 仍指向这个地址。</text>
+</svg>
+<div class="cap">图 4 · 第 4 帧（共 7 帧）　free(p1)：把 A 挂进 tcache[0]，成为链头</div>
+</div>
+<div class="figure">
+<svg viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>七步实例 第5步：free(p2)</title>
+<desc>把 B 挂进 tcache[0]，成为新链头</desc>
+<defs><marker id="c7f" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="14" width="18" height="18" rx="5" fill="#185fa5"/>
+<text x="49" y="27" font-size="11.5" fill="#ffffff" text-anchor="middle" font-weight="600" font-family="sans-serif">5</text>
+<text x="66" y="27" font-size="12.5" fill="#0c447c" font-weight="600" font-family="sans-serif">free(p2)　—　把 B 挂进 tcache[0]，成为新链头</text>
+<text x="42" y="47" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">三个 chunk 的真实结构（灰=头，蓝=使用中，绿=空闲在链）</text>
+<text x="42" y="79" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p1</text>
+<rect x="96" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="85" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="85" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="56" width="400" height="36" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<line x1="376" y1="58" x2="376" y2="90" stroke="#3b6d11" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="58" x2="508" y2="90" stroke="#3b6d11" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="85" font-size="10.5" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">NULL</text>
+<text x="442.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="85" font-size="10.5" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">tcache</text>
+<text x="576.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="85" font-size="10.5" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">旧数据还在</text>
+<text x="42" y="119" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p2</text>
+<rect x="96" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="125" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="125" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="96" width="400" height="36" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<line x1="376" y1="98" x2="376" y2="130" stroke="#3b6d11" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="98" x2="508" y2="130" stroke="#3b6d11" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="111" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="125" font-size="10.5" fill="#791f1f" text-anchor="middle" font-weight="600" font-family="sans-serif">A</text>
+<text x="442.0" y="111" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="125" font-size="10.5" fill="#791f1f" text-anchor="middle" font-weight="600" font-family="sans-serif">tcache</text>
+<text x="576.0" y="111" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="125" font-size="10.5" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">旧数据还在</text>
+<text x="42" y="159" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p3</text>
+<rect x="96" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="165" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="165" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="136" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="138" x2="376" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="138" x2="508" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="42" y="196" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">tcache[0] 当前链：</text>
+<rect x="42" y="205" width="52" height="32" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="68" y="226" font-size="11" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">链头</text>
+<path d="M94 221 L120 221" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#c7f)"/>
+<rect x="122" y="205" width="54" height="32" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="149" y="226" font-size="11.5" fill="#2b5c0b" text-anchor="middle" font-weight="600" font-family="sans-serif">B</text>
+<text x="180" y="202" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">next</text>
+<path d="M176 221 L200 221" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#c7f)"/>
+<path d="M202 221 L228 221" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#c7f)"/>
+<rect x="230" y="205" width="54" height="32" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="257" y="226" font-size="11.5" fill="#2b5c0b" text-anchor="middle" font-weight="600" font-family="sans-serif">A</text>
+<path d="M284 221 L308 221" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#c7f)"/>
+<text x="314" y="226" font-size="11" fill="#5f5e5a" font-family="sans-serif">NULL</text>
+<text x="500" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">counts = 2</text>
+<rect x="42" y="252" width="600" height="36" rx="6" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="50" y="275" font-size="10.8" fill="#2c2c2a" font-family="sans-serif">本步变化：B 成为新链头，B.next 写入 A 的地址，链变成 B→A。后释放的排在链头（LIFO）。</text>
+</svg>
+<div class="cap">图 4 · 第 5 帧（共 7 帧）　free(p2)：把 B 挂进 tcache[0]，成为新链头</div>
+</div>
+<div class="figure">
+<svg viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>七步实例 第6步：p4 = malloc(24)</title>
+<desc>从 tcache 取链头 B 返回</desc>
+<defs><marker id="c7f" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="14" width="18" height="18" rx="5" fill="#185fa5"/>
+<text x="49" y="27" font-size="11.5" fill="#ffffff" text-anchor="middle" font-weight="600" font-family="sans-serif">6</text>
+<text x="66" y="27" font-size="12.5" fill="#0c447c" font-weight="600" font-family="sans-serif">p4 = malloc(24)　—　从 tcache 取链头 B 返回</text>
+<text x="42" y="47" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">三个 chunk 的真实结构（灰=头，蓝=使用中，绿=空闲在链）</text>
+<text x="42" y="79" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p1</text>
+<rect x="96" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="85" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="85" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="56" width="400" height="36" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<line x1="376" y1="58" x2="376" y2="90" stroke="#3b6d11" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="58" x2="508" y2="90" stroke="#3b6d11" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="85" font-size="10.5" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">NULL</text>
+<text x="442.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="85" font-size="10.5" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">tcache</text>
+<text x="576.0" y="71" font-size="9.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="85" font-size="10.5" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">旧数据还在</text>
+<text x="42" y="119" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p2 / p4</text>
+<rect x="96" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="125" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="125" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="96" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="98" x2="376" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="98" x2="508" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">NULL(已清)</text>
+<text x="442.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="125" font-size="10.5" fill="#791f1f" text-anchor="middle" font-weight="600" font-family="sans-serif">NULL(已清)</text>
+<text x="576.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">p4 业务数据</text>
+<text x="42" y="159" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p3</text>
+<rect x="96" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="165" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="165" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="136" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="138" x2="376" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="138" x2="508" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="42" y="196" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">tcache[0] 当前链：</text>
+<rect x="42" y="205" width="52" height="32" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="68" y="226" font-size="11" fill="#2b5c0b" text-anchor="middle" font-family="sans-serif">链头</text>
+<path d="M94 221 L120 221" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#c7f)"/>
+<rect x="122" y="205" width="54" height="32" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="149" y="226" font-size="11.5" fill="#2b5c0b" text-anchor="middle" font-weight="600" font-family="sans-serif">A</text>
+<path d="M176 221 L200 221" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#c7f)"/>
+<text x="206" y="226" font-size="11" fill="#5f5e5a" font-family="sans-serif">NULL</text>
+<text x="500" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">counts = 1</text>
+<rect x="42" y="252" width="600" height="36" rx="6" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="50" y="275" font-size="10.8" fill="#2c2c2a" font-family="sans-serif">本步变化：取链头 B 交给 p4，清掉 B.key。p4 与 p2 地址完全相同，链上只剩 A。</text>
+</svg>
+<div class="cap">图 4 · 第 6 帧（共 7 帧）　p4 = malloc(24)：从 tcache 取链头 B 返回</div>
+</div>
+<div class="figure">
+<svg viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>七步实例 第7步：p5 = malloc(24)</title>
+<desc>再取链头 A，tcache 回到空</desc>
+<defs><marker id="c7f" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="14" width="18" height="18" rx="5" fill="#185fa5"/>
+<text x="49" y="27" font-size="11.5" fill="#ffffff" text-anchor="middle" font-weight="600" font-family="sans-serif">7</text>
+<text x="66" y="27" font-size="12.5" fill="#0c447c" font-weight="600" font-family="sans-serif">p5 = malloc(24)　—　再取链头 A，tcache 回到空</text>
+<text x="42" y="47" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">三个 chunk 的真实结构（灰=头，蓝=使用中，绿=空闲在链）</text>
+<text x="42" y="79" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p1 / p5</text>
+<rect x="96" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="85" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="56" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="71" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="85" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="56" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="58" x2="376" y2="90" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="58" x2="508" y2="90" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">NULL(已清)</text>
+<text x="442.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="85" font-size="10.5" fill="#791f1f" text-anchor="middle" font-weight="600" font-family="sans-serif">NULL(已清)</text>
+<text x="576.0" y="71" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="85" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">p5 业务数据</text>
+<text x="42" y="119" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p2 / p4</text>
+<rect x="96" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="125" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="96" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="111" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="125" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="96" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="98" x2="376" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="98" x2="508" y2="130" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">NULL(已清)</text>
+<text x="442.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">NULL(已清)</text>
+<text x="576.0" y="111" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="125" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">p4 业务数据</text>
+<text x="42" y="159" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">p3</text>
+<rect x="96" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="133.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+<text x="133.0" y="165" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">前块占用</text>
+<rect x="170" y="136" width="74" height="36" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="207.0" y="151" font-size="9.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">size</text>
+<text x="207.0" y="165" font-size="9.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">0x20 P=1</text>
+<rect x="244" y="136" width="400" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<line x1="376" y1="138" x2="376" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<line x1="508" y1="138" x2="508" y2="170" stroke="#185fa5" stroke-dasharray="3 3" stroke-width="0.7"/>
+<text x="310.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">next</text>
+<text x="310.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="442.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">key</text>
+<text x="442.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="576.0" y="151" font-size="9.5" fill="#185fa5" text-anchor="middle" font-family="sans-serif">数据区</text>
+<text x="576.0" y="165" font-size="10.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据</text>
+<text x="42" y="196" font-size="10.5" fill="#5f5e5a" font-family="sans-serif">tcache[0] 当前链：</text>
+<rect x="42" y="205" width="430" height="32" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="52" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">链头 = NULL　tcache[0] 为空</text>
+<text x="500" y="226" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">counts = 0</text>
+<rect x="42" y="252" width="600" height="36" rx="6" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="50" y="275" font-size="10.8" fill="#2c2c2a" font-family="sans-serif">本步变化：取链头 A 交给 p5，tcache 归空。p5 与 p1 地址完全相同——这就是"新旧指针指向同一块"。</text>
+</svg>
+<div class="cap">图 4 · 第 7 帧（共 7 帧）　p5 = malloc(24)：再取链头 A，tcache 回到空</div>
+</div>
+<h3>逐步状态表（可对照复核）</h3>
+  <table>
+    <tr><th>步骤</th><th>操作</th><th>tcache[0] 链</th><th>counts[0]</th><th>关键点</th></tr>
+    <tr><td>1</td><td><code>p1 = malloc(24)</code></td><td>空</td><td>0</td><td>tcache 空，从 top chunk 切 0x20 块 A</td></tr>
+    <tr><td>2</td><td><code>p2 = malloc(24)</code></td><td>空</td><td>0</td><td>再切块 B</td></tr>
+    <tr><td>3</td><td><code>p3 = malloc(24)</code></td><td>空</td><td>0</td><td>再切块 C</td></tr>
+    <tr><td>4</td><td><code>free(p1)</code></td><td>A</td><td>1</td><td>A 写入 next=NULL、key=tcache，成为链头</td></tr>
+    <tr><td>5</td><td><code>free(p2)</code></td><td>B → A</td><td>2</td><td>B 写入 next=A、key=tcache，成为新链头</td></tr>
+    <tr><td>6</td><td><code>p4 = malloc(24)</code></td><td>A</td><td>1</td><td><b>p4 == p2</b>：取链头 B，清 B 的 key；counts--</td></tr>
+    <tr><td>7</td><td><code>p5 = malloc(24)</code></td><td>空</td><td>0</td><td><b>p5 == p1</b>：取链头 A，清 A 的 key</td></tr>
+  </table>
+  <div class="note"><b>这张表验证了三件事：</b>① 同大小释放的块必然被同大小请求复用（按档 + 链头）；② 顺序是后进先出（先释放的 A 最后才被取到）；③ <code>p4</code> 与 <code>p2</code>、<code>p5</code> 与 <code>p1</code> 是<b>完全相同的地址</b>——这正是你那个问题里"旧指针和新指针指向同一块内存"的由来。</div>
+  
+</section>
+
+<section id="s2">
+  <h2><span class="n">05</span>chunk：一块内存的真实样貌</h2>
+  <p>堆里的每块内存都叫 <b>chunk</b>。它在用户数据前面藏了 16 字节的头（64 位下两个 8 字节字段）。<code>malloc</code> 返回的 <code>mem</code> 是用户区起始地址，比 chunk 起始地址大 16。你的代码只能看到用户区，头是 glibc 的记账区。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 360" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>chunk 的完整字段结构</title>
+      <desc>chunk 由 prev_size、size 和用户区组成，size 低三位是标志位，malloc 返回的用户地址等于 chunk 地址加 16。</desc>
+      <defs><marker id="c2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text x="40" y="26" font-size="12" fill="#5f5e5a" font-family="sans-serif">一个已分配的 chunk（64 位，示例大小 0x20 = 32 字节）</text>
+      <rect x="60" y="44" width="150" height="60" rx="6" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="135" y="70" font-size="13" font-weight="600" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+      <text x="135" y="90" font-size="11" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">8 字节</text>
+      <rect x="210" y="44" width="150" height="60" rx="6" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+      <text x="285" y="70" font-size="13" font-weight="600" fill="#854f0b" text-anchor="middle" font-family="sans-serif">size</text>
+      <text x="285" y="90" font-size="11" fill="#854f0b" text-anchor="middle" font-family="sans-serif">8 字节（含低 3 位标志）</text>
+      <rect x="360" y="44" width="260" height="60" rx="6" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="490" y="70" font-size="13" font-weight="600" fill="#0c447c" text-anchor="middle" font-family="sans-serif">用户区 user data</text>
+      <text x="490" y="90" font-size="11" fill="#185fa5" text-anchor="middle" font-family="sans-serif">malloc 返回的地址指向这里</text>
+      <path d="M60 116 L60 126 L135 126" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#c2)"/>
+      <text x="60" y="140" font-size="11" fill="#5f5e5a" font-family="sans-serif">chunk 起始</text>
+      <path d="M360 116 L360 126 L430 126" fill="none" stroke="#185fa5" stroke-width="1.5" marker-end="url(#c2)"/>
+      <text x="366" y="140" font-size="11" fill="#185fa5" font-family="sans-serif">mem = chunk + 16</text>
+      <rect x="40" y="158" width="600" height="34" rx="6" fill="#eaf3de" stroke="#c0dd97" stroke-width="0.5"/>
+      <text x="52" y="180" font-size="12" fill="#3b6d11" font-family="sans-serif">size 字段低 3 位：bit0 = PREV_INUSE（前一块在用）· bit1 = IS_MMAPPED · bit2 = NON_MAIN_ARENA</text>
+      <rect x="40" y="200" width="600" height="34" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="52" y="222" font-size="12" fill="#2c2c2a" font-family="sans-serif">真实大小 chunksize = size &amp; ~7；请求 n 字节 → chunk 大小 = 对齐(n + 8, 16)，最小 32</text>
+      <text x="40" y="264" font-size="12.5" font-weight="600" fill="#791f1f" font-family="sans-serif">举例：malloc(24) 会得到多大的 chunk？</text>
+      <rect x="40" y="276" width="600" height="30" rx="6" fill="#fcebeb" stroke="#f7c1c1" stroke-width="0.5"/>
+      <text x="52" y="296" font-size="12" fill="#791f1f" font-family="sans-serif">24 + 8 = 32，已是 16 的倍数 → chunk 大小 0x20（32 字节），其中头 16 字节，用户可用 24 字节</text>
+      <rect x="40" y="312" width="600" height="30" rx="6" fill="#fcebeb" stroke="#f7c1c1" stroke-width="0.5"/>
+      <text x="52" y="332" font-size="12" fill="#791f1f" font-family="sans-serif">malloc(40) → 40 + 8 = 48 → chunk 0x30（48 字节）；可见"请求大小 ≠ chunk 大小"</text>
+    </svg>
+    <div class="cap">图 5 · chunk 结构。size 的高位存大小、低三位存状态；头这一部分属于 glibc，越界写前 16 字节就会破坏记账信息。</div>
+  </div>
+  <h3>同一个 chunk，空闲时长什么样</h3>
+  <div class="figure">
+    <svg viewBox="0 0 680 330" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>已分配与空闲状态的字段对照</title>
+      <desc>已分配时整块用户区存业务数据；进入 tcache 后只有前 16 字节被改写为 next 和 key，后面的用户数据原样保留不擦除。</desc>
+      <defs><marker id="c3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text x="40" y="26" font-size="12" fill="#5f5e5a" font-family="sans-serif">同一块内存，状态不同，用户区前 16 字节的含义完全不同</text>
+      <text x="40" y="60" font-size="13" font-weight="500" fill="#0c447c" font-family="sans-serif">已分配</text>
+      <rect x="130" y="40" width="100" height="44" rx="5" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="180" y="67" font-size="11.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+      <rect x="230" y="40" width="100" height="44" rx="5" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+      <text x="280" y="67" font-size="11.5" fill="#854f0b" text-anchor="middle" font-family="sans-serif">size</text>
+      <rect x="330" y="40" width="290" height="44" rx="5" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="475" y="67" font-size="12" fill="#0c447c" text-anchor="middle" font-family="sans-serif">业务数据（你的代码写这里）</text>
+      <path d="M330 92 L330 102" fill="none" stroke="#185fa5" stroke-width="1.5" marker-end="url(#c3)"/>
+      <text x="338" y="102" font-size="11" fill="#185fa5" font-family="sans-serif">mem</text>
+      <text x="40" y="160" font-size="13" font-weight="500" fill="#791f1f" font-family="sans-serif">空闲（挂进 tcache 后）</text>
+      <rect x="130" y="140" width="100" height="44" rx="5" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="180" y="167" font-size="11.5" fill="#2c2c2a" text-anchor="middle" font-family="sans-serif">prev_size</text>
+      <rect x="230" y="140" width="100" height="44" rx="5" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+      <text x="280" y="167" font-size="11.5" fill="#854f0b" text-anchor="middle" font-family="sans-serif">size</text>
+      <rect x="330" y="140" width="105" height="44" rx="5" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="382.5" y="160" font-size="12" font-weight="600" fill="#791f1f" text-anchor="middle" font-family="sans-serif">next</text>
+      <text x="382.5" y="176" font-size="10.5" fill="#a32d2d" text-anchor="middle" font-family="sans-serif">下一个空闲块</text>
+      <rect x="435" y="140" width="105" height="44" rx="5" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="487.5" y="160" font-size="12" font-weight="600" fill="#791f1f" text-anchor="middle" font-family="sans-serif">key</text>
+      <text x="487.5" y="176" font-size="10.5" fill="#a32d2d" text-anchor="middle" font-family="sans-serif">归属标记</text>
+      <rect x="540" y="140" width="80" height="44" rx="5" fill="#e1f5ee" stroke="#5dcaa5" stroke-width="0.5"/>
+      <text x="580" y="160" font-size="11.5" font-weight="600" fill="#085041" text-anchor="middle" font-family="sans-serif">其余数据</text>
+      <text x="580" y="176" font-size="10.5" fill="#085041" text-anchor="middle" font-family="sans-serif">旧数据还在</text>
+      <rect x="40" y="206" width="580" height="30" rx="6" fill="#e1f5ee" stroke="#5dcaa5" stroke-width="0.5"/>
+      <text x="52" y="226" font-size="12" fill="#085041" font-family="sans-serif">free 只改写 mem 起始的 16 字节为 next / key；后面的用户数据不擦除，原样留着</text>
+      <rect x="40" y="242" width="580" height="30" rx="6" fill="#fcebeb" stroke="#f7c1c1" stroke-width="0.5"/>
+      <text x="52" y="262" font-size="12" fill="#791f1f" font-family="sans-serif">块重新分配后，业务一写数据就覆盖 next / key，glibc 的检测线索随之消失</text>
+      <rect x="40" y="278" width="580" height="34" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="52" y="299" font-size="12" fill="#2c2c2a" font-family="sans-serif">这是全篇最关键的一点：空闲块"自带"链表节点，不需要额外内存，但也很容易被覆盖</text>
+    </svg>
+    <div class="cap">图 6 · next/key 与用户数据共用同一块内存。这一"复用"既省内存，也是后面检测失效的根源。</div>
+  </div>
+</section>
+
+<section id="s-add-hdr">
+  <h2><span class="n">06</span>chunk 头两字段：prev_size 与 size 到底干什么</h2>
+  <p>先纠正一个常见说法：头 16 字节不是"两个 size"，而是 <code>prev_size</code>（8B）和 <code>size</code>（8B），两者分工完全不同。它们配合实现 glibc 的<b>边界标记（boundary tag）</b>机制——让 <code>free</code> 时能 O(1) 找到相邻块并合并。</p>
+  <table>
+    <thead><tr><th>字段</th><th>存什么</th><th>何时有效</th><th>核心用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>size</b></td><td>本 chunk 总大小（含头）+ 低 3 位标志</td><td><b>永远有效</b></td><td>① 算下一块地址 <code>next = p + size</code>；② 按大小选 bin / 判断 top 够不够切</td></tr>
+      <tr><td><b>prev_size</b></td><td>物理相邻前一块的大小</td><td>仅当本块 <b>P 位 = 0</b>（前块空闲）</td><td>向前合并时定位前一块起点 <code>prev = p − prev_size</code></td></tr>
+    </tbody>
+  </table>
+  <div class="figure">
+    <svg viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>chunk 头两字段的用途</title>
+      <desc>三个相邻 chunk 的布局，prev_size 用于向前合并定位前块，size 用于定位下一块和选 bin。</desc>
+      <defs><marker id="eh" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text x="40" y="26" font-size="15" font-weight="700" fill="#2c2c2a" font-family="sans-serif">chunk 头 16 字节：prev_size + size 各管什么</text>
+      <text x="132" y="50" font-size="12" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">chunk A</text>
+      <text x="327" y="50" font-size="12" font-weight="600" fill="#185fa5" text-anchor="middle" font-family="sans-serif">chunk B（关注块）</text>
+      <text x="522" y="50" font-size="12" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">chunk C</text>
+      <rect x="40" y="58" width="58" height="66" fill="#faeeda" stroke="#ba7517" stroke-width="0.5"/>
+      <rect x="98" y="58" width="52" height="66" fill="#e6f1fb" stroke="#378add" stroke-width="0.5"/>
+      <rect x="150" y="58" width="75" height="66" fill="#f1efe8" stroke="#b4b2a9" stroke-width="0.5"/>
+      <text x="69" y="88" font-size="10" fill="#854f0b" text-anchor="middle" font-family="sans-serif">prev_size</text>
+      <text x="69" y="104" font-size="10" fill="#854f0b" text-anchor="middle" font-family="sans-serif">8B</text>
+      <text x="124" y="88" font-size="11" font-weight="600" fill="#0c447c" text-anchor="middle" font-family="sans-serif">size</text>
+      <text x="124" y="104" font-size="10" fill="#0c447c" text-anchor="middle" font-family="sans-serif">8B</text>
+      <text x="187" y="96" font-size="10.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">用户数据</text>
+      <rect x="235" y="58" width="58" height="66" fill="#faeeda" stroke="#ba7517" stroke-width="0.5"/>
+      <rect x="293" y="58" width="52" height="66" fill="#e6f1fb" stroke="#378add" stroke-width="0.5"/>
+      <rect x="345" y="58" width="75" height="66" fill="#f1efe8" stroke="#b4b2a9" stroke-width="0.5"/>
+      <rect x="233" y="56" width="189" height="70" fill="none" stroke="#185fa5" stroke-width="1.5" rx="3"/>
+      <text x="264" y="88" font-size="10" fill="#854f0b" text-anchor="middle" font-family="sans-serif">prev_size</text>
+      <text x="264" y="104" font-size="10" fill="#854f0b" text-anchor="middle" font-family="sans-serif">8B</text>
+      <text x="319" y="88" font-size="11" font-weight="600" fill="#0c447c" text-anchor="middle" font-family="sans-serif">size</text>
+      <text x="319" y="104" font-size="10" fill="#0c447c" text-anchor="middle" font-family="sans-serif">8B·低3位标志</text>
+      <text x="382" y="96" font-size="10.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">用户数据</text>
+      <rect x="430" y="58" width="58" height="66" fill="#faeeda" stroke="#ba7517" stroke-width="0.5"/>
+      <rect x="488" y="58" width="52" height="66" fill="#e6f1fb" stroke="#378add" stroke-width="0.5"/>
+      <rect x="540" y="58" width="75" height="66" fill="#f1efe8" stroke="#b4b2a9" stroke-width="0.5"/>
+      <text x="459" y="88" font-size="10" fill="#854f0b" text-anchor="middle" font-family="sans-serif">prev_size</text>
+      <text x="459" y="104" font-size="10" fill="#854f0b" text-anchor="middle" font-family="sans-serif">8B</text>
+      <text x="514" y="88" font-size="11" font-weight="600" fill="#0c447c" text-anchor="middle" font-family="sans-serif">size</text>
+      <text x="514" y="104" font-size="10" fill="#0c447c" text-anchor="middle" font-family="sans-serif">8B</text>
+      <text x="577" y="96" font-size="10.5" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">用户数据</text>
+      <path d="M264 126 L200 158" fill="none" stroke="#ba7517" stroke-width="1.2" marker-end="url(#eh)"/>
+      <path d="M319 126 L490 158" fill="none" stroke="#378add" stroke-width="1.2" marker-end="url(#eh)"/>
+      <rect x="40" y="160" width="290" height="112" rx="10" fill="#faeeda" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="56" y="184" font-size="13" font-weight="700" fill="#412402" font-family="sans-serif">prev_size（8B）= 前一块的大小</text>
+      <text x="56" y="207" font-size="11.5" fill="#412402" font-family="sans-serif">• 仅当本块 P 位=0（前块空闲）才有效</text>
+      <text x="56" y="228" font-size="11.5" fill="#412402" font-family="sans-serif">• 向前合并：前块起点 = p − prev_size</text>
+      <text x="56" y="249" font-size="11.5" fill="#412402" font-family="sans-serif">• P=1 时这 8B 借给前块当用户数据</text>
+      <rect x="350" y="160" width="290" height="112" rx="10" fill="#e6f1fb" stroke="#378add" stroke-width="0.5"/>
+      <text x="366" y="184" font-size="13" font-weight="700" fill="#042c53" font-family="sans-serif">size（8B）= 本块大小 + 标志位</text>
+      <text x="366" y="207" font-size="11.5" fill="#042c53" font-family="sans-serif">• 下一块地址 = p + size（next_chunk）</text>
+      <text x="366" y="228" font-size="11.5" fill="#042c53" font-family="sans-serif">• 按大小选 bin / 判断 top 能否切分</text>
+      <text x="366" y="249" font-size="11.5" fill="#042c53" font-family="sans-serif">• 低 3 位存状态（见下表）</text>
+      <text x="40" y="292" font-size="11" fill="#888780" font-family="sans-serif">依据 glibc 2.35 malloc.c：malloc_chunk 1153 · next_chunk 1414 · prev_chunk 1423 · 标志位 1372/1379/1388</text>
+    </svg>
+    <div class="cap">图 7 · 三个相邻 chunk。size 是"向后"的标尺，prev_size 是"向前"的标尺，两者让相邻块的合并能在 O(1) 完成。</div>
+  </div>
+
+  <h3>size 的低 3 位标志（chunk 按 16 字节对齐，低 3 位恒为 0，借来存状态）</h3>
+  <table>
+    <thead><tr><th>位</th><th>名字</th><th>值</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td>bit0</td><td><code>PREV_INUSE</code> (P)</td><td>0x1</td><td>前一块正在使用；P=0 才表示前块空闲、<code>prev_size</code> 有效</td></tr>
+      <tr><td>bit1</td><td><code>IS_MMAPPED</code> (M)</td><td>0x2</td><td>本块由 mmap 独立分配，free 时直接 munmap、不进 bin</td></tr>
+      <tr><td>bit2</td><td><code>NON_MAIN_ARENA</code> (A)</td><td>0x4</td><td>本块属于非主 arena（线程池线程上的块通常命中这个）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>prev_size 的反直觉点：前块在用时不归本块</h3>
+  <p>只有前一块空闲（P=0）时，<code>prev_size</code> 才存着前一块的大小，glibc 才能算出前块起点、把它从 bin 摘下来合并。前一块正在使用（P=1）时，这 8 字节<b>被前一块借去当用户数据</b>——这正是源码注释里的 "size of chunk, but used for application data"（malloc.c:1194），也是 <code>malloc_usable_size()</code> 常比你请求的多 8 字节的原因之一。</p>
+  <p>还有个容易混的点（malloc.c:1247）：<b>本块的 footer 其实就是"下一块的 prev_size 字段"</b>。空闲块的大小在块头 <code>size</code> 和下一块 <code>prev_size</code> 各存一份，正是这份冗余让向前、向后两个方向的合并都能 O(1) 完成——这就是"边界标记"名字的由来。</p>
+
+  <h3>连回 double free 场景</h3>
+  <p>埋雷块 P 进哪个 fastbin、B 为什么能从 fastbin 取回同一个 P，都由 <b>P 的 size</b> 决定。而 fasttop 检查只比链头地址 <code>old == p</code>，<b>不读 size、不读 prev_size</b>，所以这两个字段在你的主线里不是检测点，只是"块能被这样调度"的前提。core 里看到的 size 是崩溃那一刻的值；B 写用户区只覆盖前 16B 的用户字段位，不会动头里的 size，所以 size 通常仍可信，能反推块的档位。</p>
+</section>
+
+<section id="s3">
+  <h2><span class="n">07</span>空闲块怎么记账：size class 与 bin</h2>
+  <p>光有 chunk 还不够，glibc 必须知道"哪些块空着"。做法是按<b>大小分档</b>管理空闲块：<b>小尺寸</b>按 32 字节一档、48 字节一档、64 字节一档（每档 +16B）……每一档维护一条链表，统称 <b>bin</b>；大块（large bin）则改用分组递增的档宽。这样请求 24 字节时，直接去"32 字节档"的链表找即可，不用遍历整个堆。各容器具体有几档，见本章末尾的对照表。</p>
+  <div class="figure">
+    <svg viewBox="0 0 920 372" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>空闲块按大小分档与 bin 分类</title>
+      <desc>chunk 大小按 16 字节递增分档，tcache 和 fastbin 覆盖小尺寸，smallbin 和 largebin 覆盖更大尺寸，unsorted bin 是刚释放块的暂存区。</desc>
+      <text x="48" y="32" font-size="14" fill="#5f5e5a" font-family="sans-serif">tcache 的 64 档：从 0x20 起按 chunk 大小排列，每档 +16B</text>
+      <rect x="48" y="96" width="824" height="42" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="66" y="124" font-size="14" fill="#3b6d11" font-family="sans-serif">tcache 覆盖：0x20 ~ 0x410（64 档，每档最多 7 个）</text>
+      <rect x="48" y="152" width="402" height="42" rx="6" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+      <text x="66" y="180" font-size="14" fill="#854f0b" font-family="sans-serif">fastbin：≤ 0x80（64 位默认）</text>
+      <rect x="468" y="152" width="404" height="42" rx="6" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="486" y="180" font-size="14" fill="#2c2c2a" font-family="sans-serif">smallbin / largebin：更大尺寸</text>
+      <rect x="48" y="208" width="824" height="42" rx="6" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="66" y="236" font-size="14" fill="#791f1f" font-family="sans-serif">unsorted bin：刚释放的块先进这里暂存，之后按大小分流到 small / large bin</text>
+      <text x="48" y="286" font-size="14.5" font-weight="600" fill="#0c447c" font-family="sans-serif">一条 bin 链长什么样（以 32 字节档为例）</text>
+      <rect x="48" y="298" width="210" height="46" rx="6" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="153" y="327" font-size="13.5" fill="#0c447c" text-anchor="middle" font-family="sans-serif">bin[0x20] 链头</text>
+      <path d="M262 321 L322 321" fill="none" stroke="#185fa5" stroke-width="1.5"/>
+      <rect x="330" y="298" width="240" height="46" rx="6" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="450" y="327" font-size="13.5" fill="#791f1f" text-anchor="middle" font-family="sans-serif">空闲块 A（next→B）</text>
+      <path d="M574 321 L634 321" fill="none" stroke="#a32d2d" stroke-width="1.5"/>
+      <rect x="642" y="298" width="230" height="46" rx="6" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="757" y="327" font-size="13.5" fill="#791f1f" text-anchor="middle" font-family="sans-serif">空闲块 B（next→NULL）</text>
+      <text x="48" y="364" font-size="14" fill="#2c2c2a" font-family="sans-serif">next 指针就写在每个空闲块的用户区前 8 字节 —— 链表节点和块本身是一回事。</text>
+    </svg>
+    <div class="cap">图 8 · 分档 + 链表 = 快速定位空闲块。请求 24 字节只会去 0x20 档的链上看，不会翻遍整个堆。</div>
+  </div>
+  <div class="def">
+    <div class="k">size class</div><div class="v">按 chunk 大小分的档位，相邻档差 16 字节。请求先算出 chunk 大小，再映射到对应档。</div>
+    <div class="k">bin</div><div class="v">同一档空闲块的链表集合。glibc 有多类 bin：tcache、fastbin、smallbin、largebin、unsorted bin。</div>
+    <div class="k">next</div><div class="v">空闲块用户区前 8 字节的字段，指向同档的下一个空闲块。把空闲块自己变成链表节点。</div>
+  </div>
+  <h3>各容器到底有几档</h3>
+  <p>上面说 tcache 和 bin "共用这套分档"，指的是<b>都按 chunk 大小分组</b>这个思路，不代表档数相同。按 glibc 2.35 源码，各容器档数其实各不相同——只有 tcache 恰好是 64 档：</p>
+  <table>
+    <tr><th>容器</th><th>默认档数</th><th>每档宽度</th><th>覆盖 chunk size</th><th>源码依据</th></tr>
+    <tr><td><b>tcache</b></td><td><b>64</b></td><td>每档 +16B</td><td>0x20 ~ 0x410</td><td><code>TCACHE_MAX_BINS=64</code></td></tr>
+    <tr><td>fastbin</td><td>7（数组容量 10）</td><td>每档 +16B</td><td>0x20 ~ 0x80（可调至 0xb0）</td><td><code>global_max_fast=0x80</code></td></tr>
+    <tr><td>small bin</td><td>62</td><td>每档 +16B</td><td>0x20 ~ 0x3f0</td><td><code>bin[2..63]</code></td></tr>
+    <tr><td>large bin</td><td>63</td><td>分组递增（非 16B）</td><td>0x400 以上</td><td><code>bin[64..126]</code></td></tr>
+    <tr><td>unsorted bin</td><td>1</td><td>不分大小</td><td>刚释放的块暂存</td><td><code>bin[1]</code></td></tr>
+  </table>
+  <div class="note"><b>两个容易搞错的点：</b>① <code>bins[]</code> 数组共 128 槽（bin0 占位、bin1 unsorted、bin2–63 small、bin64–126 large、bin127 不用），fastbin 另用独立的 <code>fastbinsY[]</code>——所以"bin 有 64 档"在任何一层都不准确。② fastbin 默认只启用 <b>7 档（≤ 0x80）</b>，表里"数组容量 10"是编译期上限（≤ 0xb0），<code>mallopt(M_MXFAST)</code> 调到最大才用得到；常态是 7 档。图 8 已按此修正：tcache / fastbin / small bin 都标为小尺寸档（每档 16B），large bin 单独标注为分组递增档宽。</div>
+</section>
+
+<section id="s4">
+  <h2><span class="n">08</span>tcache：为什么它最快</h2>
+  <p>tcache（thread cache，线程缓存）是 2.26 引入的一层"快速通道"。它不是一个独立的堆，而是从空闲块体系里切出来的一小段缓存，特点是<b>每线程私有</b>（不用加锁）、<b>按大小分 64 档</b>、<b>每档最多 7 个块</b>、<b>链头进出</b>。malloc 和 free 都先看它。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 350" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>tcache 的结构与链头进出</title>
+      <desc>tcache 为每个线程所有，含 64 个 size class 的链头和计数，每档最多七个块，放取都在链头，后进先出。</desc>
+      <defs><marker id="c4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text x="40" y="26" font-size="12" fill="#5f5e5a" font-family="sans-serif">tcache_perthread_struct：每个线程一份，随线程创建分配</text>
+      <rect x="40" y="42" width="340" height="150" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="56" y="64" font-size="12.5" font-weight="600" fill="#3b6d11" font-family="sans-serif">counts[64]　每档当前块数（0~7）</text>
+      <rect x="56" y="74" width="44" height="26" rx="4" fill="#ffffff" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="78" y="92" font-size="11.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">2</text>
+      <rect x="104" y="74" width="44" height="26" rx="4" fill="#ffffff" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="126" y="92" font-size="11.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">0</text>
+      <rect x="152" y="74" width="44" height="26" rx="4" fill="#ffffff" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="174" y="92" font-size="11.5" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">1</text>
+      <text x="210" y="92" font-size="12" fill="#3b6d11" font-family="sans-serif">… 共 64 档</text>
+      <text x="56" y="128" font-size="12.5" font-weight="600" fill="#3b6d11" font-family="sans-serif">entries[64]　每档的链头指针</text>
+      <rect x="56" y="138" width="44" height="26" rx="4" fill="#ffffff" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="78" y="156" font-size="11" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">→A</text>
+      <rect x="104" y="138" width="44" height="26" rx="4" fill="#ffffff" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="126" y="156" font-size="11" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">NULL</text>
+      <rect x="152" y="138" width="44" height="26" rx="4" fill="#ffffff" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="174" y="156" font-size="11" fill="#3b6d11" text-anchor="middle" font-family="sans-serif">→C</text>
+      <text x="210" y="156" font-size="12" fill="#3b6d11" font-family="sans-serif">…</text>
+      <rect x="404" y="42" width="236" height="150" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="420" y="64" font-size="12.5" font-weight="600" fill="#0c447c" font-family="sans-serif">对应的空闲块链</text>
+      <text x="420" y="90" font-size="12" fill="#0c447c" font-family="sans-serif">entries[0] → B → A</text>
+      <text x="420" y="112" font-size="12" fill="#0c447c" font-family="sans-serif">counts[0] = 2</text>
+      <path d="M420 132 L620 132" fill="none" stroke="#185fa5" stroke-width="1.5" marker-end="url(#c4)"/>
+      <text x="420" y="156" font-size="11.5" fill="#185fa5" font-family="sans-serif">放：新块变链头；取：摘链头</text>
+      <text x="420" y="176" font-size="11.5" fill="#185fa5" font-family="sans-serif">后进先出 LIFO</text>
+      <rect x="40" y="210" width="600" height="30" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="52" y="230" font-size="12" fill="#2c2c2a" font-family="sans-serif">为什么快：每线程私有 → 无需互斥锁；链头插取 → O(1)；命中就走，不必管其他 bin</text>
+      <rect x="40" y="246" width="600" height="30" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="52" y="266" font-size="12" fill="#2c2c2a" font-family="sans-serif">为什么限制 7 个：太少命中率低，太多占内存；7 是实测折中值，可通过 tunable 调整</text>
+      <rect x="40" y="282" width="600" height="46" rx="6" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="52" y="302" font-size="12" fill="#791f1f" font-family="sans-serif">key 字段：块进 tcache 时被写成 tcache 结构地址，作为"我还在这条链上"的标记；</text>
+      <text x="52" y="320" font-size="12" fill="#791f1f" font-family="sans-serif">取出时清成 NULL。它就是 2.29+ 检测重复释放所依赖的唯一线索。</text>
+    </svg>
+    <div class="cap">图 9 · tcache 结构。记住下一节会用的一条：每档 7 个上限、链头进出、key 标记。</div>
+  </div>
+  <div class="note"><b>为什么"链头进出"是必然复用的关键：</b>你 free 掉的块会被放到对应档的链头；紧接着同档的 malloc 一定先取链头。所以"刚释放的同大小内存马上又分给下一次请求"不是巧合，是数据结构决定的。</div>
+</section>
+
+<section id="s-add-rel">
+  <h2><span class="n">09</span>tcache 与各类 bin 的关系</h2>
+  <p>tcache 不是 bin 之一，而是 bin 体系<b>前面的拦截层</b>。free 和 malloc 都要先过 tcache：命中就立即返回，完全不碰下面的 bin；没命中才下探到后端。各类 bin 是 tcache 之外的全部复用手段，两者是前后两级，不是并列关系。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 468" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>tcache 位于 bin 体系之前</title>
+      <desc>free 和 malloc 先经过 tcache，命中立即返回；未命中时才下探到 fastbin、small bin、unsorted bin、large bin 和 top chunk。</desc>
+      <defs><marker id="ar1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text x="40" y="34" font-size="15" font-weight="500" fill="#2c2c2a" font-family="sans-serif">tcache 不是 bin 之一，而是 bin 前面的快车道</text>
+      <rect x="40" y="52" width="270" height="52" rx="10" fill="#f1efe8" stroke="#888780" stroke-width="0.5"/>
+      <text x="175" y="72" font-size="13" font-weight="500" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">free(p)：先试 tcache</text>
+      <text x="175" y="90" font-size="12" fill="#5f5e5a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">尺寸合适且该档没满就存入</text>
+      <rect x="370" y="52" width="270" height="52" rx="10" fill="#f1efe8" stroke="#888780" stroke-width="0.5"/>
+      <text x="505" y="72" font-size="13" font-weight="500" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">malloc(n)：先查 tcache</text>
+      <text x="505" y="90" font-size="12" fill="#5f5e5a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">同档链表非空就直接取出</text>
+      <path d="M175 104 L175 134" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#ar1)"/>
+      <path d="M505 104 L505 134" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#ar1)"/>
+      <rect x="40" y="138" width="600" height="130" rx="16" fill="#faeeda" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="58" y="162" font-size="14" font-weight="500" fill="#412402" font-family="sans-serif">tcache · 每线程私有 · L1 快车道</text>
+      <text x="58" y="186" font-size="12.5" fill="#633806" font-family="sans-serif">命中就立即返回，完全不碰 bin：无锁、链头进出、不合并</text>
+      <rect x="58" y="200" width="270" height="52" rx="8" fill="#fac775" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="72" y="218" font-size="11.5" fill="#412402" dominant-baseline="central" font-family="sans-serif">64 个 size class，每档默认最多 7 块</text>
+      <text x="72" y="236" font-size="11.5" fill="#412402" dominant-baseline="central" font-family="sans-serif">空闲块自己就是节点，写入 next / key</text>
+      <rect x="344" y="200" width="278" height="52" rx="8" fill="#fac775" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="358" y="218" font-size="11.5" fill="#412402" dominant-baseline="central" font-family="sans-serif">2.29+ 才有 key 去重检查</text>
+      <text x="358" y="236" font-size="11.5" fill="#412402" dominant-baseline="central" font-family="sans-serif">块被取走后 key 清零，线索消失</text>
+      <path d="M340 268 L340 304" fill="none" stroke="#ba7517" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ar1)"/>
+      <text x="352" y="288" font-size="12" fill="#633806" font-family="sans-serif">没命中才下探：档位满 / 链空 / 尺寸太大</text>
+      <rect x="40" y="308" width="600" height="120" rx="16" fill="#f1efe8" stroke="#888780" stroke-width="0.5"/>
+      <text x="58" y="332" font-size="14" font-weight="500" fill="#2c2c2a" font-family="sans-serif">传统 bin 体系 · arena 共享 · L2 后端</text>
+      <rect x="58" y="344" width="104" height="36" rx="6" fill="#d3d1c7" stroke="#888780" stroke-width="0.5"/>
+      <text x="110" y="362" font-size="11.5" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">fastbin</text>
+      <rect x="170" y="344" width="104" height="36" rx="6" fill="#d3d1c7" stroke="#888780" stroke-width="0.5"/>
+      <text x="222" y="362" font-size="11.5" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">small bin</text>
+      <rect x="282" y="344" width="104" height="36" rx="6" fill="#d3d1c7" stroke="#888780" stroke-width="0.5"/>
+      <text x="334" y="362" font-size="11.5" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">unsorted bin</text>
+      <rect x="394" y="344" width="104" height="36" rx="6" fill="#d3d1c7" stroke="#888780" stroke-width="0.5"/>
+      <text x="446" y="362" font-size="11.5" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">large bin</text>
+      <rect x="506" y="344" width="104" height="36" rx="6" fill="#d3d1c7" stroke="#888780" stroke-width="0.5"/>
+      <text x="558" y="362" font-size="11.5" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">top chunk</text>
+      <text x="58" y="394" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">free：小尺寸多进 fastbin，其余进 unsorted；两者都可能先被 tcache 截走</text>
+      <text x="58" y="412" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">malloc：fastbin → small → unsorted → large → top → sysmalloc</text>
+      <text x="40" y="448" font-size="12" fill="#2c2c2a" font-family="sans-serif">一个空闲块同一时刻只在一层里；tcache 命中就不进 bin，没命中才落到 bin。</text>
+    </svg>
+    <div class="cap">图 10 · tcache 是拦截层，bin 是后端。每次 free / malloc 都先过 tcache，命中即返回。</div>
+  </div>
+  <p><code>free(p)</code>：尺寸在 tcache 范围内且该档没满（默认 7 块）→ 写 <code>next</code>/<code>key</code> 存入 tcache 并立即返回，不会进 fastbin 或 unsorted bin；档位满了或尺寸太大才落到后端。<code>malloc(n)</code>：同档 tcache 非空 → 取链头立即返回；链空了才按 fastbin → small → unsorted → large → top → sysmalloc 一路找下去。</p>
+  <p>后端各容器分工不同：fastbin 管最小块（单链 LIFO、不合并）；small bin 按精确尺寸分档（双向链）；unsorted bin 是刚释放块的<b>分拣过渡站</b>，下次 malloc 时把块分流到 small/large 或直接使用；large bin 按尺寸范围分档、内部排序；top chunk 是堆尾剩余空间，都不够才向内核扩堆。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 336" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>tcache 与各类 bin 覆盖的尺寸范围</title>
+      <desc>tcache 的覆盖范围横跨 fastbin 与 small bin，并延伸到部分大块；fastbin 只覆盖最小尺寸，small bin 覆盖中等尺寸，unsorted bin 覆盖最广，large bin 覆盖大块。</desc>
+      <text x="40" y="34" font-size="15" font-weight="500" fill="#2c2c2a" font-family="sans-serif">按块大小看：tcache 横跨 fastbin 和小 bin 的范围</text>
+      <text x="40" y="71" font-size="12.5" font-weight="500" fill="#412402" font-family="sans-serif">tcache</text>
+      <rect x="160" y="52" width="470" height="38" rx="8" fill="#faeeda" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="174" y="71" font-size="12" fill="#412402" dominant-baseline="central" font-family="sans-serif">每线程 · 快车道 · 从小块一直覆盖到约 1KB 量级</text>
+      <text x="40" y="116" font-size="12.5" font-weight="500" fill="#0c447c" font-family="sans-serif">fastbin</text>
+      <rect x="160" y="100" width="110" height="32" rx="6" fill="#e6f1fb" stroke="#378add" stroke-width="0.5"/>
+      <text x="170" y="116" font-size="11.5" fill="#0c447c" dominant-baseline="central" font-family="sans-serif">最小尺寸</text>
+      <text x="40" y="158" font-size="12.5" font-weight="500" fill="#0c447c" font-family="sans-serif">small bin</text>
+      <rect x="160" y="142" width="280" height="32" rx="6" fill="#e6f1fb" stroke="#378add" stroke-width="0.5"/>
+      <text x="174" y="158" font-size="11.5" fill="#0c447c" dominant-baseline="central" font-family="sans-serif">按精确尺寸分档</text>
+      <text x="40" y="200" font-size="12.5" font-weight="500" fill="#0c447c" font-family="sans-serif">unsorted bin</text>
+      <rect x="160" y="184" width="470" height="32" rx="6" fill="#b5d4f4" stroke="#378add" stroke-width="0.5"/>
+      <text x="174" y="200" font-size="11.5" fill="#042c53" dominant-baseline="central" font-family="sans-serif">过渡站：刚释放的块先在这里分拣，范围最广</text>
+      <text x="40" y="242" font-size="12.5" font-weight="500" fill="#0c447c" font-family="sans-serif">large bin</text>
+      <rect x="440" y="226" width="190" height="32" rx="6" fill="#e6f1fb" stroke="#378add" stroke-width="0.5"/>
+      <text x="452" y="242" font-size="11.5" fill="#0c447c" dominant-baseline="central" font-family="sans-serif">大块：按范围分档 + 排序</text>
+      <path d="M160 276 L630 276" fill="none" stroke="#888780" stroke-width="0.5"/>
+      <text x="180" y="294" font-size="11" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">小块</text>
+      <text x="350" y="294" font-size="11" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">约 512B</text>
+      <text x="520" y="294" font-size="11" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">约 1KB</text>
+      <text x="610" y="294" font-size="11" fill="#5f5e5a" text-anchor="middle" font-family="sans-serif">更大</text>
+      <text x="40" y="316" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">阈值随 glibc 版本 / tunable 变化，图中只表示相对覆盖范围，不是精确刻度。</text>
+    </svg>
+    <div class="cap">图 11 · tcache 的范围盖住 fastbin 全部和 small bin 大部分：连释 7 个同尺寸块后，第 8 个才会落到 fastbin。</div>
+  </div>
+  <table>
+    <tr><th>要点</th><th>具体含义</th></tr>
+    <tr><td>互斥存放</td><td>一个空闲块同一时刻只在一层里，不会既在 tcache 又在 bin。tcache 命中＝这条路径根本没走到 bin</td></tr>
+    <tr><td>分流条件</td><td>free 看"尺寸是否在 tcache 范围内 + 该档是否满"；malloc 看"同档 tcache 是否非空"。不满足才下探</td></tr>
+    <tr><td>后端分工</td><td>fastbin 最快但只比链头；unsorted 是分拣站；small/large 双向链；top 不够才 sysmalloc 向内核扩堆</td></tr>
+    <tr><td>检测随层而变</td><td>tcache 有 <code>key</code> 去重（2.29+）；fastbin 只比链头；双向 bin 靠 <code>fd</code>/<code>bk</code> 互指校验</td></tr>
+  </table>
+  <div class="warn"><b>接上 double free：</b>第一次 free 时块进 tcache（写入 <code>key</code>）；同尺寸 malloc 把它取走，<code>key</code> 被清零并被业务数据覆盖；旧指针再次 free 时，块又想进 tcache，但 <code>tcache_put</code> 检查 <code>e-&gt;key == tcache</code> 的前提已不成立 → 检测分支跳过 → 放行。假如同样的块落在 fastbin，检测手段就换成"只比链头"，又是另一套判据。所以"当时为什么没报"不是抽查漏检，而是<b>它当时所在的那一层没有成立的条件</b>。</div>
+  <div class="note"><b>版本差异：</b>2.26 之前没有 tcache，free 直接进 fastbin/unsorted——老资料里 fastbin 讲得多、新资料里 tcache 讲得多，原因就在这里。</div>
+</section>
+
+<section id="s-add-key">
+  <h2><span class="n">10</span>next / key 到底写了什么，key 有什么用</h2>
+  <p>你的理解"free 后在用户数据区写 next 和 key，next 指向下一块空闲内存，块挂在 tcache 或各类 bin 下且互斥"——<b>方向对，但有三处要收紧</b>。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 336" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>不同空闲链表在用户区前 16 字节写入的字段</title>
+      <desc>tcache 写 next 和 key；fastbin 只写 fd；small、large、unsorted bin 写 fd 和 bk。字段都写在 malloc 返回地址起始的 16 字节上。</desc>
+      <text x="40" y="30" font-size="15" font-weight="500" fill="#2c2c2a" font-family="sans-serif">释放后用户区前 16 字节写什么，取决于它进了哪一层</text>
+      <rect x="40" y="46" width="600" height="86" rx="12" fill="#faeeda" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="56" y="68" font-size="13" font-weight="500" fill="#412402" font-family="sans-serif">tcache：next + key</text>
+      <rect x="56" y="80" width="280" height="38" rx="6" fill="#fac775" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="196" y="99" font-size="11.5" fill="#412402" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">next → 同档下一块</text>
+      <rect x="344" y="80" width="280" height="38" rx="6" fill="#fac775" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="484" y="99" font-size="11.5" fill="#412402" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">key = 本线程 tcache 标识（盖章）</text>
+      <rect x="40" y="144" width="600" height="70" rx="12" fill="#f1efe8" stroke="#888780" stroke-width="0.5"/>
+      <text x="56" y="164" font-size="13" font-weight="500" fill="#2c2c2a" font-family="sans-serif">fastbin：只有 fd</text>
+      <rect x="56" y="176" width="280" height="28" rx="6" fill="#d3d1c7" stroke="#888780" stroke-width="0.5"/>
+      <text x="196" y="190" font-size="11.5" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">fd → 下一块（单链）</text>
+      <text x="356" y="194" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">没有 key，只比对链头</text>
+      <rect x="40" y="226" width="600" height="70" rx="12" fill="#e6f1fb" stroke="#378add" stroke-width="0.5"/>
+      <text x="56" y="246" font-size="13" font-weight="500" fill="#0c447c" font-family="sans-serif">small / large / unsorted bin：fd + bk</text>
+      <rect x="56" y="258" width="280" height="28" rx="6" fill="#b5d4f4" stroke="#378add" stroke-width="0.5"/>
+      <text x="196" y="272" font-size="11.5" fill="#042c53" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">fd → 后一块</text>
+      <rect x="344" y="258" width="280" height="28" rx="6" fill="#b5d4f4" stroke="#378add" stroke-width="0.5"/>
+      <text x="484" y="272" font-size="11.5" fill="#042c53" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">bk → 前一块（双向链）</text>
+      <text x="40" y="316" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">这些字段都写在 malloc 返回地址起始的 16 字节上；块一旦重新分配，业务写入必然覆盖它们。</text>
+    </svg>
+    <div class="cap">图 12 · 只有 tcache 写 next + key；fastbin 只有 fd；双向 bin 写 fd + bk。</div>
+  </div>
+  <ol>
+    <li><b>next / key 不是"释放登记表"。</b>它们是<b>空闲链表节点本身</b>——glibc 不另建账本，块自己就是节点。真正额外的标记只有 <code>key</code>。</li>
+    <li><b>"下一块"指同一条空闲链表上的下一块</b>（同 size class），不是物理地址相邻的块；双向 bin 里是 <code>fd</code>/<code>bk</code> 两个方向。</li>
+    <li><b>互斥只在某一瞬间成立。</b>块会随时间流动：tcache 满 → 落到 bin；从 bin 被 malloc 取走 → 变成已分配；再 free → 又回 tcache。合并路径下原块还会被并入更大的块。</li>
+  </ol>
+  <h3>key 的作用：不是检查本身，是"要不要检查"的开关</h3>
+  <p>tcache 是单链，要判断"这块是不是已经在链上"本来得遍历整条 bin（O(n)），每次 free 都遍历太慢。2.29 起加入 <code>key</code>：块进 tcache 时写入本线程 tcache 结构的地址作为"盖章"，于是 <code>tcache_put</code> 可以先用 O(1) 判断：</p>
+  <table>
+    <tr><th>条件</th><th>glibc 的动作</th><th>代价</th></tr>
+    <tr><td><code>e-&gt;key != tcache</code></td><td>视为正常情况，直接挂链，不遍历</td><td>O(1)</td></tr>
+    <tr><td><code>e-&gt;key == tcache</code></td><td>可疑：遍历该档链表查重，发现同一块已在链上就报 <code>double free detected in tcache 2</code> → abort</td><td>O(n)，但极少发生</td></tr>
+  </table>
+  <div class="warn"><b>你的场景为什么进不了这个分支：</b><code>tcache_get</code> 取走块时把 <code>key</code> 清成 NULL，随后业务写入覆盖这一格。旧指针再次 free 时 <code>key</code> 已不是 tcache → 连查重分支都不进，直接放行。<code>key</code> 只存在于 tcache；fastbin 靠比链头，双向 bin 靠 <code>fd</code>/<code>bk</code> 互指校验——同一类错误落在不同层，检测能力不同。</div>
+</section>
+
+<section id="s8">
+  <h2><span class="n">11</span>key 与重复释放检测</h2>
+  <p>现在可以回答：glibc 到底靠什么发现"重复释放"。答案只有一个字段——<code>key</code>。它在 <code>tcache_put</code> 时被写成 tcache 自身地址，在 <code>tcache_get</code> 时被清成 NULL。<b>只有当一个块还躺在 tcache 里、key 完好时，检测才成立。</b></p>
+  <div class="figure">
+    <svg viewBox="0 0 680 330" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>tcache_put 与 tcache_get 中的 key 变化</title>
+      <desc>放入时检查 key 是否已等于 tcache 以发现重复，然后写入 next 和 key；取出时清 key 为 NULL，并让下一个块成为链头。</desc>
+      <defs><marker id="c8" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <rect x="40" y="40" width="290" height="210" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="56" y="64" font-size="13" font-weight="600" fill="#791f1f" font-family="sans-serif">tcache_put（free 时）</text>
+      <text x="56" y="92" font-size="11.5" fill="#791f1f" font-family="sans-serif">① 若 e-&gt;key == tcache：遍历该档链</text>
+      <text x="70" y="110" font-size="11.5" fill="#791f1f" font-family="sans-serif">发现同一块已在链上 → 报 double free</text>
+      <text x="56" y="138" font-size="11.5" fill="#791f1f" font-family="sans-serif">② e-&gt;next = 当前链头</text>
+      <text x="56" y="162" font-size="11.5" fill="#791f1f" font-family="sans-serif">③ e-&gt;key = tcache（盖章）</text>
+      <text x="56" y="186" font-size="11.5" fill="#791f1f" font-family="sans-serif">④ 链头 = e，counts++</text>
+      <rect x="56" y="202" width="258" height="34" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="68" y="224" font-size="11" fill="#791f1f" font-family="sans-serif">检测依赖 key 完好且块仍在链上</text>
+      <rect x="350" y="40" width="290" height="210" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="366" y="64" font-size="13" font-weight="600" fill="#3b6d11" font-family="sans-serif">tcache_get（malloc 时）</text>
+      <text x="366" y="92" font-size="11.5" fill="#3b6d11" font-family="sans-serif">① e = 该档链头</text>
+      <text x="366" y="116" font-size="11.5" fill="#3b6d11" font-family="sans-serif">② 链头 = e-&gt;next（下一个块上位）</text>
+      <text x="366" y="140" font-size="11.5" fill="#3b6d11" font-family="sans-serif">③ counts--</text>
+      <text x="366" y="164" font-size="11.5" fill="#3b6d11" font-family="sans-serif">④ e-&gt;key = NULL（撕章）</text>
+      <rect x="366" y="190" width="258" height="46" rx="6" fill="#ffffff" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="378" y="210" font-size="11" fill="#3b6d11" font-family="sans-serif">块回到业务手中，key 不再是 tcache；</text>
+      <text x="378" y="226" font-size="11" fill="#3b6d11" font-family="sans-serif">此时旧指针再 free，检测分支不成立</text>
+      <text x="40" y="284" font-size="12.5" font-weight="600" fill="#2c2c2a" font-family="sans-serif">两种重复释放，可检测性完全不同：</text>
+      <rect x="40" y="294" width="600" height="28" rx="6" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+      <text x="52" y="313" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">A 型：连续 free 同一指针、块仍在链上 → key 完好 → 当场报 double free detected in tcache 2</text>
+    </svg>
+    <div class="cap">图 13 · key 是唯一线索。B 型（free → 重新分配 → 旧指针再 free）中 key 已被撕掉或被业务数据覆盖，检测分支不成立——这是能力边界，不是抽查漏检。详见故障分析手册。</div>
+  </div>
+  <div class="warn"><b>和你的问题的接口：</b>你的场景正是 B 型。component A 释放后留着旧指针 p；同大小内存被 malloc 给哈希业务（p 与新指针同址）；哈希写入覆盖了 next/key；A 再用 p 调 free 时，key 已不是 tcache，检测跳过。之后某次堆操作撞上不一致的链才 abort。</div>
+</section>
+
+<section id="s-add-source">
+  <h2><span class="n">12</span>brk / mmap 分界线与 tcache / bin 的关系</h2>
+  <p>这是两个不同层次的问题：<b>brk / mmap 决定内存从哪来</b>，<b>tcache / bin 决定拿到的块怎么复用</b>。你讨论的 <code>next</code>/<code>key</code>/double free，全部发生在前一条路线上。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 372" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>brk 与 mmap 分界线在 tcache/bin 的哪一侧</title>
+      <desc>malloc 先查 tcache 和 bin；top chunk 够或请求较小时从 arena 切块并进入 tcache/bin 体系；top 不足且请求超过 mmap 阈值时单独 mmap，free 时直接 munmap，不进入 tcache 或 bin。</desc>
+      <defs><marker id="absrc" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text x="40" y="30" font-size="15" font-weight="500" fill="#2c2c2a" font-family="sans-serif">brk / mmap 分界线在 tcache / bin 的哪一侧</text>
+      <rect x="250" y="46" width="180" height="44" rx="8" fill="#f1efe8" stroke="#888780" stroke-width="0.5"/>
+      <text x="340" y="68" font-size="13" font-weight="500" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">malloc(n)</text>
+      <path d="M340 90 L340 108" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#absrc)"/>
+      <rect x="200" y="110" width="280" height="44" rx="8" fill="#f1efe8" stroke="#888780" stroke-width="0.5"/>
+      <text x="340" y="132" font-size="12.5" font-weight="500" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">tcache / bin 都不够，top chunk 还够吗？</text>
+      <path d="M200 132 L170 132 L170 180" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#absrc)"/>
+      <path d="M480 132 L510 132 L510 180" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#absrc)"/>
+      <text x="60" y="160" font-size="11" fill="#5f5e5a" font-family="sans-serif">够 / 或 nb &lt; 阈值</text>
+      <text x="522" y="160" font-size="11" fill="#5f5e5a" font-family="sans-serif">不够且 nb ≥ 阈值</text>
+      <rect x="40" y="182" width="250" height="60" rx="8" fill="#f1efe8" stroke="#888780" stroke-width="0.5"/>
+      <text x="165" y="202" font-size="12.5" font-weight="500" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">从 arena 切块</text>
+      <text x="165" y="222" font-size="11.5" fill="#5f5e5a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">必要时 brk 扩展堆</text>
+      <path d="M165 242 L165 272" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#absrc)"/>
+      <rect x="40" y="274" width="250" height="60" rx="8" fill="#faeeda" stroke="#ba7517" stroke-width="0.5"/>
+      <text x="165" y="294" font-size="12.5" font-weight="500" fill="#412402" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">进入 tcache / bin 体系</text>
+      <text x="165" y="314" font-size="11.5" fill="#633806" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">double free 只发生在这里</text>
+      <rect x="390" y="182" width="250" height="60" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="515" y="202" font-size="12.5" font-weight="500" fill="#791f1f" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">单独 mmap 一块</text>
+      <text x="515" y="222" font-size="11.5" fill="#a32d2d" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">size 标 IS_MMAPPED</text>
+      <path d="M515 242 L515 272" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#absrc)"/>
+      <rect x="390" y="274" width="250" height="60" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="515" y="294" font-size="12.5" font-weight="500" fill="#791f1f" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">free 时直接 munmap</text>
+      <text x="515" y="314" font-size="11.5" fill="#a32d2d" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">不进 tcache，也不进任何 bin</text>
+      <text x="40" y="352" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">阈值默认约 128 KB、可调且会动态变化；即使请求超过阈值，top chunk 够大时仍可能直接从 top 切。</text>
+    </svg>
+    <div class="cap">图 14 · brk/mmap 是"内存从哪来"，处在 tcache/bin 的上游；mmap 大块不参与空闲链表复用。</div>
+  </div>
+  <ol>
+    <li><code>malloc</code> 先查 tcache、再看 bin，最后才看 top chunk；<b>只有 top chunk 也不够、需要调 <code>sysmalloc</code> 向内核扩堆时</b>，才按 <code>mmap_threshold</code> 分流。</li>
+    <li>请求小于阈值 → <code>brk</code> 扩展主 arena 的堆（非主 arena 用 mmap 划出一大片 arena 区域），切出的块照常进 tcache/bin 体系。</li>
+    <li>请求大于等于阈值 → 单独 <code>mmap</code> 一块，<code>size</code> 标 <code>IS_MMAPPED</code>；free 时直接 <code>munmap</code> 归还内核，<b>不进 tcache、不进任何 bin</b>。因此 double free 那套链条只发生在 arena 块上。</li>
+  </ol>
+  <div class="note"><b>精确性提醒：</b>默认阈值约 128 KB，可通过 <code>M_MMAP_THRESHOLD</code> / <code>MALLOC_MMAP_THRESHOLD_</code> / <code>glibc.malloc.mmap_threshold</code> 调整，且 glibc 会动态改变它；阈值判断只发生在 top 不够时——即使请求超过阈值，top chunk 够大仍可能直接从 top 切。具体值按现场 glibc 版本核对。</div>
+</section>
+
+<section id="s-add-full">
+  <h2><span class="n">13</span>malloc 完整路径：从 request2size 到 brk / mmap</h2>
+  <p>前面第 2 章给的是"查找顺序概览"，第 12 章给了分界线。<b>这一节把两端补齐</b>：先给出 <code>request2size</code> 的精确换算，再把 s5 最后那站 <code>sysmalloc</code> 完全展开——看清楚 <code>mmap</code> 阈值判断、<code>brk</code> 扩展、以及非主 arena 的 <code>grow_heap</code> / <code>new_heap</code> 各自在什么位置。以下分支对应 glibc 2.35 源码。</p>
+
+  <h3>第 0 步：request2size — 把 n 换算成 chunk 大小</h3>
+  <p>你调用 <code>malloc(n)</code> 里的 <code>n</code>，不是 chunk 的 <code>size</code>。glibc 先补上 size 字段、再按 16 字节对齐，并设一个下限。源码 1331 行的宏：</p>
+  <pre><code>#define request2size(req) \
+  (((req) + SIZE_SZ + MALLOC_ALIGN_MASK &lt; MINSIZE) \
+   ? MINSIZE \
+   : ((req) + SIZE_SZ + MALLOC_ALIGN_MASK) &amp; ~MALLOC_ALIGN_MASK)
+/* 64 位：SIZE_SZ=8, MALLOC_ALIGNMENT=16, MALLOC_ALIGN_MASK=15, MINSIZE=32 */</code></pre>
+  <table>
+    <thead><tr><th>请求 n</th><th>n + 8</th><th>向上对齐到 16</th><th>chunk size</th><th>用户区可用</th></tr></thead>
+    <tbody>
+      <tr><td><code>malloc(1)</code></td><td>9</td><td>16 &lt; MINSIZE</td><td>32（取下限）</td><td>24 字节</td></tr>
+      <tr><td><code>malloc(24)</code></td><td>32</td><td>32</td><td>32</td><td>24 字节</td></tr>
+      <tr><td><code>malloc(25)</code></td><td>33</td><td>48</td><td>48</td><td>40 字节</td></tr>
+      <tr><td><code>malloc(1000)</code></td><td>1008</td><td>1008</td><td>1008</td><td>1000 字节</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>为什么 +8：</b>malloc 返回的是用户区起点（<code>mem</code>），它前面还有 8 字节的 <code>size</code> 头。所以 <code>nb = align16(n + 8)</code>，向下多算的这点空间就是给元数据用的；<code>prev_size</code> 那一格只在块空闲时才被借用，分配中归前一块使用。</div>
+
+  <h3>第 1 步：完整决策流程（含 sysmalloc 展开）</h3>
+  <p>下面是把 s5 的 ⑤ 号站整个展开后的完整流程。绿色是 tcache 快路径，蓝色是各类 bin，<b>琥珀色是 brk / arena 扩展路径</b>，红色是 mmap 路径。注意 mmap 判断的位置——它在 <code>sysmalloc</code> 的<b>最开头</b>，优先于 brk。</p>
+  <div class="figure">
+    <svg viewBox="0 0 680 754" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>malloc 完整决策流程，含 sysmalloc 中 mmap 与 brk 的分支</title>
+      <desc>先由 request2size 换算大小，依次查 tcache、fastbin、smallbin/unsorted、largebin，再看 top chunk；top 不足进入 sysmalloc，先判断 mmap 阈值，命中则直接 mmap 独立块并标记 IS_MMAPPED，否则主 arena 用 sbrk/brk 扩展、非主 arena 用 grow_heap 或 new_heap，brk 失败再回退 mmap，最后从新空间切块返回。</desc>
+      <defs><marker id="addfull" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text x="40" y="26" font-size="13" font-weight="600" fill="#2c2c2a" font-family="sans-serif">malloc 主路径：从请求到 top chunk</text>
+      <rect x="150" y="36" width="380" height="44" rx="8" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="340" y="58" font-size="13" font-weight="600" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">malloc(n)</text>
+      <path d="M340 80 L340 96" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <rect x="150" y="98" width="380" height="44" rx="8" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="340" y="120" font-size="12.5" font-weight="600" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">request2size：nb = align16(n + 8)，下限 32</text>
+      <path d="M340 142 L340 158" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <rect x="150" y="160" width="380" height="52" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="1"/>
+      <text x="340" y="180" font-size="12.5" font-weight="600" fill="#3b6d11" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">① tcache（每线程私有，counts &gt; 0 ?）</text>
+      <text x="340" y="198" font-size="11" fill="#3b6d11" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">取链头、counts--、key 清 NULL → 返回</text>
+      <path d="M340 212 L340 228" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <text x="540" y="222" font-size="11" fill="#888780" font-family="sans-serif">空才继续</text>
+      <rect x="150" y="230" width="380" height="52" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="340" y="250" font-size="12.5" font-weight="600" fill="#0c447c" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">② fastbin → ③ smallbin / unsorted bin</text>
+      <text x="340" y="268" font-size="11" fill="#185fa5" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">精确匹配优先；unsorted 遍历时顺手分流</text>
+      <path d="M340 282 L340 298" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <rect x="150" y="300" width="380" height="52" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+      <text x="340" y="320" font-size="12.5" font-weight="600" fill="#0c447c" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">④ largebin → top chunk</text>
+      <text x="340" y="338" font-size="11" fill="#185fa5" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">最佳适配；都不行就看堆顶</text>
+      <path d="M340 352 L340 368" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <rect x="150" y="370" width="380" height="44" rx="8" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+      <text x="340" y="392" font-size="12.5" font-weight="600" fill="#854f0b" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">top chunk 剩余量 ≥ nb + MINSIZE ?</text>
+      <path d="M150 392 L96 392 L96 424" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <text x="62" y="384" font-size="11" fill="#888780" font-family="sans-serif">够</text>
+      <path d="M530 392 L620 392 L620 424" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <text x="548" y="384" font-size="11" fill="#a32d2d" font-family="sans-serif">不够 → sysmalloc</text>
+      <rect x="40" y="426" width="112" height="52" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+      <text x="96" y="446" font-size="12" font-weight="600" fill="#3b6d11" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">从 top 切</text>
+      <text x="96" y="463" font-size="11" fill="#3b6d11" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">更新 top</text>
+      <text x="40" y="500" font-size="13" font-weight="600" fill="#2c2c2a" font-family="sans-serif">sysmalloc：top 不够时才进入，先看要不要直接 mmap</text>
+      <path d="M620 426 L620 522 L340 522 L340 534" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <rect x="150" y="536" width="380" height="46" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="340" y="550" font-size="12.5" font-weight="600" fill="#791f1f" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">nb ≥ mmap_threshold 且 n_mmaps &lt; max ?</text>
+      <text x="340" y="568" font-size="11" fill="#a32d2d" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">命中就先试 mmap（优先于 brk）</text>
+      <path d="M150 559 L96 559 L96 592" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <path d="M530 559 L620 559 L620 592" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <text x="452" y="551" font-size="11" fill="#888780" font-family="sans-serif">否则</text>
+      <rect x="40" y="594" width="118" height="66" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+      <text x="99" y="610" font-size="11.5" font-weight="600" fill="#791f1f" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">mmap 独立块</text>
+      <text x="99" y="627" font-size="10.5" fill="#a32d2d" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">size 标 IS_MMAPPED</text>
+      <text x="99" y="644" font-size="10.5" fill="#a32d2d" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">free 时直接 munmap</text>
+      <rect x="516" y="594" width="124" height="66" rx="8" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+      <text x="578" y="610" font-size="11.5" font-weight="600" fill="#412402" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">扩展 arena 堆</text>
+      <text x="578" y="627" font-size="10.5" fill="#854f0b" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">主：sbrk / brk</text>
+      <text x="578" y="644" font-size="10.5" fill="#854f0b" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">非主：grow/new_heap</text>
+      <path d="M96 660 L96 678 L340 678 L340 694" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#addfull)"/>
+      <path d="M578 660 L578 678 L340 678" fill="none" stroke="#888780" stroke-width="1.5"/>
+      <rect x="220" y="696" width="240" height="40" rx="8" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+      <text x="340" y="716" font-size="12" font-weight="600" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">切块 + remainder 归位 → 返回用户区</text>
+      <text x="40" y="750" font-size="11" fill="#5f5e5a" font-family="sans-serif">brk 失败时还会回退到 mmap（作为 morecore 使用），这条兜底路径图中未单独画出。</text>
+    </svg>
+    <div class="cap">图 15 · malloc 完整决策流程。mmap 判断在 sysmalloc 最开头、优先于 brk；只有 arena 路径上的块才进 tcache/bin，才可能出现前面讨论的 fasttop 报错。</div>
+  </div>
+
+  <h3>第 2 步：arena 路径 vs mmap 路径 — 四条硬差别</h3>
+  <table>
+    <thead><tr><th>维度</th><th>arena 路径（brk / grow_heap）</th><th>mmap 路径（大块）</th></tr></thead>
+    <tbody>
+      <tr><td>触发条件</td><td>nb &lt; 阈值，或 mmap 失败后回退</td><td>nb ≥ mmap_threshold 且 mmap 数未达上限</td></tr>
+      <tr><td>向内核要空间</td><td>主 arena 用 <code>sbrk</code>/<code>brk</code> 推移 program break；非主 arena 用 <code>grow_heap</code>/<code>new_heap</code>（本身也是 mmap）</td><td>单独一次 <code>mmap</code>，独立虚拟内存段</td></tr>
+      <tr><td>size 字段</td><td>普通 size，<code>IS_MMAPPED</code> 位为 0</td><td>size 或上 <code>IS_MMAPPED</code>（0x2）</td></tr>
+      <tr><td>free 去向</td><td>进 tcache → fastbin / unsorted bin，可与邻居合并</td><td>直接 <code>munmap</code> 归还内核，不进 tcache、不进任何 bin、不合并</td></tr>
+      <tr><td>与本主题的关系</td><td>double free / fasttop / key 全部发生在这条路</td><td>不参与空闲链表，也不产生 fasttop 报错</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>两个容易记错的点：</b>① mmap 阈值默认 128 KB，但它是<b>动态</b>的——释放一个 mmap 块时 glibc 可能把阈值抬到该块大小（源码 3373–3379 行），也能用 <code>M_MMAP_THRESHOLD</code> / <code>MALLOC_MMAP_THRESHOLD_</code> 固定。② 阈值判断只在 <code>sysmalloc</code> 里做，也就是 <b>top chunk 不够时</b>；即使请求超过 128 KB，只要 top 够大，仍可能直接从 top 切，不走 mmap。</div>
+
+  <p>这样，从你写下的 <code>malloc(n)</code> 到拿回指针，中间经过的每一站、以及 <code>brk</code> 和 <code>mmap</code> 各自在哪一步被触发，就都串起来了。前面 s4–s8 讨论的 <code>next</code>/<code>key</code>/double free，全部落在补图 D1 中"arena 路径"这条支线上——这也是为什么 fasttop 报错只可能来自小块、且一定在 arena 分配出来的 chunk 上。</p>
+</section>
+
+<section id="s9">
+  <h2><span class="n">14</span>名词与尺寸速查</h2>
+  <h3>核心名词一栏表</h3>
+  <table>
+    <tr><th>名词</th><th>一句话定义</th></tr>
+    <tr><td><code>chunk</code></td><td>堆里的一块内存 = 16 字节头 + 用户区；分配与回收的最小单位。</td></tr>
+    <tr><td><code>size</code></td><td>chunk 头字段，存总大小，低 3 位是状态标志。真实大小 = size &amp; ~7。</td></tr>
+    <tr><td><code>mem</code></td><td>用户区起始地址 = chunk + 16，即 malloc 返回给你的指针。</td></tr>
+    <tr><td><code>bin</code></td><td>同一大小档的空闲块链表集合；含 tcache / fastbin / small / large / unsorted。</td></tr>
+    <tr><td><code>size class</code></td><td>按 chunk 大小分的档，相邻差 16 字节。请求先算 chunk 大小再定档。</td></tr>
+    <tr><td><code>tcache</code></td><td>每线程私有的快速缓存，64 档、每档最多 7 个、链头进出、无锁。</td></tr>
+    <tr><td><code>next</code></td><td>空闲块用户区前 8 字节，指向同档下一个空闲块。</td></tr>
+    <tr><td><code>key</code></td><td>空闲块用户区第二个 8 字节，放入时盖章、取出时清空，用于重复释放检测。</td></tr>
+    <tr><td><code>tcache_put</code></td><td>free 时把块挂进 tcache 的函数，写 next/key 并检查重复。</td></tr>
+    <tr><td><code>tcache_get</code></td><td>malloc 时从 tcache 取链头的函数，清 key、counts--。</td></tr>
+  </table>
+  <h3>64 位常见尺寸对照</h3>
+  <table>
+    <tr><th>你请求 (malloc 参数)</th><th>chunk 大小</th><th>用户可用</th><th>tcache 档位</th></tr>
+    <tr><td>1 ~ 24</td><td>0x20 (32)</td><td>24</td><td>idx 0</td></tr>
+    <tr><td>25 ~ 40</td><td>0x30 (48)</td><td>40</td><td>idx 1</td></tr>
+    <tr><td>41 ~ 56</td><td>0x40 (64)</td><td>56</td><td>idx 2</td></tr>
+    <tr><td>57 ~ 72</td><td>0x50 (80)</td><td>72</td><td>idx 3</td></tr>
+    <tr><td>……</td><td>每档 +16</td><td>chunk - 8</td><td>依次 +1</td></tr>
+    <tr><td>≈ 1024</td><td>0x410 (1040)</td><td>≈ 1032</td><td>idx 62（tcache 上限附近）</td></tr>
+  </table>
+  <p style="font-size:13px;color:var(--muted)">注：具体档位上限和 count 默认值随 glibc 版本与 tunable 变化，需按现场版本核对；上表是 64 位默认配置的常见值，用于建立量级概念。</p>
+</section>
+
+<section id="s10">
+  <h2><span class="n">15</span>常见误解澄清</h2>
+  <table>
+    <tr><th>容易以为</th><th>实际是</th></tr>
+    <tr><td>free 会把内存清零</td><td>不清零。只改 chunk 头和那 16 字节元数据，旧数据还在。所以 UAF 能读到脏数据。</td></tr>
+    <tr><td>free 后指针会自动失效 / 变 NULL</td><td>不会。C 里指针只是整数值，free 不改它。需要你手动置 NULL。</td></tr>
+    <tr><td>chunk 大小 = 请求大小</td><td>chunk = 对齐(请求 + 8, 16)，还含 16 字节头。请求 24 → chunk 32。</td></tr>
+    <tr><td>tcache 是另一块独立内存</td><td>不是。它只是把空闲块按档缓存起来，块仍来自同一个堆。</td></tr>
+    <tr><td>"同大小刚好又分给它"是巧合</td><td>是 size class + LIFO 链头的必然结果。刚释放的块就在链头，下次同档请求第一个取到它。</td></tr>
+    <tr><td>glibc 会抽查 / 定期体检发现坏块</td><td>不会。检查只在 malloc/free 调用点、针对当前操作的那块发生，没有后台扫描。</td></tr>
+    <tr><td>key 被覆盖是"运气不好"</td><td>是机制必然：块重新分配后业务写入用户区，必然覆盖同址的 next/key。</td></tr>
+  </table>
+  <div class="lead"><b>收束：</b>分配器的核心就是"把块切成 chunk、用 next 把空闲块串成链、用 tcache 加速、用 key 做有限的重复检测"。chunk / bin / tcache / next / key 这五个概念串起来，malloc 和 free 的全部路径就都说得通了。再看故障手册里的 double free，就只是在问：这条链什么时候、因为什么被搞乱了。</div>
+  <p style="margin-top:16px"><a href="glibc-heap-principles.html" style="color:var(--red800);font-weight:600;text-decoration:none">→ 打开 glibc 堆破坏延迟暴露：原理图解（故障分析）</a></p>
+</section>
+
+<footer>
+  内存分配器是怎么工作的 · 独立文档，纯静态、无外部依赖，可离线打开或打印。<br>
+  用途：正面讲清 malloc / free 的机制（chunk / bin / tcache / next / key），为理解 double free 提供分配器视角；全篇先给全景（malloc / free 路径与实例），再逐层深入 chunk / bin / tcache / next / key / brk / mmap。全程通用 glibc 机制，不含业务代码或内网数据，未联网检索。<br>
+  阅读顺序建议：底层地基篇 <a href="low-level-fundamentals.html" style="color:var(--blue600)">low-level-fundamentals.html</a> → 本篇 → 故障分析篇 <a href="glibc-heap-principles.html" style="color:var(--blue600)">glibc-heap-principles.html</a>。
+</footer>
+
+</div>
+
+<button class="float-toggle" id="floatToggle" title="展开 / 收起目录"><span class="ic">☰</span>目录</button>
+
+<div class="float-panel" id="floatPanel">
+  <div class="float-hd" id="floatHd"><button class="float-close" id="floatClose" title="收起">×</button></div>
+  <div class="float-body" id="floatBody">
+<div class="grp first">全景 · 先走一遍流程</div>
+    <a href="#s1">01 三个问题</a>
+    <a href="#s5">02 malloc 路径</a>
+    <a href="#s6">03 free 路径</a>
+    <a href="#s7">04 七步实例</a>
+    <div class="grp">深入 · 逐层拆开机制</div>
+    <a href="#s2">05 chunk 结构</a>
+    <a href="#s-add-hdr">06 头两字段</a>
+    <a href="#s3">07 bin 与 size class</a>
+    <a href="#s4">08 tcache</a>
+    <a href="#s-add-rel">09 tcache 与 bin 关系</a>
+    <a href="#s-add-key">10 next / key</a>
+    <a href="#s8">11 key 与检测</a>
+    <a href="#s-add-source">12 brk / mmap</a>
+    <a href="#s-add-full">13 malloc 详解</a>
+    <div class="grp">查阅 · 速查与澄清</div>
+    <a href="#s9">14 名词速查</a>
+    <a href="#s10">15 常见误解</a>
+    <div class="foot"><a href="glibc-heap-principles.html">→ 故障分析手册</a></div>
+  </div>
+  <div class="float-resize" id="floatResize" title="拖动调整窗口大小"></div>
+</div>
+
+<script>
+(function(){
+  var toggle = document.getElementById('floatToggle');
+  var panel  = document.getElementById('floatPanel');
+  var hd     = document.getElementById('floatHd');
+  var closeBtn = document.getElementById('floatClose');
+  var rz     = document.getElementById('floatResize');
+
+  toggle.addEventListener('click', function(){ panel.classList.toggle('open'); });
+  closeBtn.addEventListener('click', function(e){ e.stopPropagation(); panel.classList.remove('open'); });
+
+  /* 先把 right/bottom 定位固化成 left/top，便于拖动与缩放 */
+  function pin(){
+    var r = panel.getBoundingClientRect();
+    panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px';
+    return r;
+  }
+
+  /* 拖动标题栏移动 */
+  var dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  hd.addEventListener('mousedown', function(e){
+    if (e.target === closeBtn) return;
+    dragging = true;
+    var r = pin();
+    sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  /* 右下角手柄缩放宽高 */
+  var resizing = false, rw = 0, rh = 0, rsx = 0, rsy = 0;
+  rz.addEventListener('mousedown', function(e){
+    e.stopPropagation();
+    resizing = true;
+    var r = pin();
+    rw = r.width; rh = r.height; rsx = e.clientX; rsy = e.clientY;
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e){
+    if (dragging){
+      var maxX = window.innerWidth - panel.offsetWidth - 4;
+      var maxY = window.innerHeight - panel.offsetHeight - 4;
+      panel.style.left = Math.max(4, Math.min(maxX, ox + e.clientX - sx)) + 'px';
+      panel.style.top  = Math.max(4, Math.min(maxY, oy + e.clientY - sy)) + 'px';
+    }
+    if (resizing){
+      var r = panel.getBoundingClientRect();
+      var maxW = window.innerWidth - r.left - 6;
+      var maxH = window.innerHeight - r.top - 6;
+      panel.style.width  = Math.max(220, Math.min(maxW, rw + e.clientX - rsx)) + 'px';
+      panel.style.height = Math.max(200, Math.min(maxH, rh + e.clientY - rsy)) + 'px';
+    }
+  });
+  function stop(){ if (dragging || resizing) document.body.style.userSelect = ''; dragging = false; resizing = false; }
+  document.addEventListener('mouseup', stop);
+
+  /* 滚动高亮当前章 */
+  var links = [].slice.call(document.querySelectorAll('.float-body a[href^="#"]'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function sync(){
+    var y = window.pageYOffset + 140, cur = secs[0];
+    for (var i = 0; i < secs.length; i++){
+      if (secs[i] && secs[i].getBoundingClientRect().top + window.pageYOffset <= y) cur = secs[i];
+      else break;
+    }
+    if (!cur) return;
+    links.forEach(function(a){
+      a.classList.toggle('active', a.getAttribute('href') === '#' + cur.id);
+    });
+  }
+  window.addEventListener('scroll', sync, {passive:true});
+  window.addEventListener('resize', sync);
+  sync();
+})();
+</script>
+
+
+</body>
+</html>

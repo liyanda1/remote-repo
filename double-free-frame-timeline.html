@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>逐帧全维度时间线 · glibc 2.35 跨线程 double free</title>
+<style>
+  :root{
+    --bg:#ffffff;--page:#faf9f6;--surface:#f1efe8;--ink:#1f1f1e;--muted:#5f5e5a;
+    --line:#e3e1da;--blue50:#e6f1fb;--blue100:#b5d4f4;--blue600:#185fa5;--blue800:#0c447c;
+    --red50:#fcebeb;--red100:#f7c1c1;--red600:#a32d2d;--red800:#791f1f;
+    --green50:#eaf3de;--green100:#c0dd97;--green600:#3b6d11;--green800:#173404;
+    --amber50:#faeeda;--amber100:#fac775;--amber800:#854f0b;--amber900:#633806;
+    --gray50:#f1efe8;--gray100:#d3d1c7;--gray600:#5f5e5a;--gray800:#2c2c2a;
+    --mono:ui-monospace,Consolas,"Cascadia Code",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.75}
+  .wrap{max-width:1000px;margin:0 auto;padding:32px 28px 80px}
+  header.top{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:28px 30px;margin-bottom:22px}
+  h1{font-size:24px;font-weight:600;margin:0 0 8px;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:14px;margin:0}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px}
+  .card{background:var(--blue50);border:1px solid var(--blue100);border-radius:10px;padding:13px 15px;font-size:12.5px;line-height:1.6}
+  .card b{display:block;color:var(--blue800);font-size:13.5px;margin-bottom:5px}
+  .card.green{background:var(--green50);border-color:var(--green100)} .card.green b{color:var(--green600)}
+  .card.amber{background:var(--amber50);border-color:var(--amber100)} .card.amber b{color:var(--amber800)}
+  nav.toc{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px 22px;margin-bottom:24px;font-size:13px}
+  nav.toc b{display:block;margin-bottom:8px;font-size:13px;color:var(--muted);font-weight:600}
+  nav.toc a{display:inline-block;margin:3px 12px 3px 0;color:var(--blue600);text-decoration:none;font-family:var(--mono)}
+  nav.toc a:hover{text-decoration:underline}
+  nav.toc a.link{color:var(--red800);font-weight:600;font-family:var(--sans);background:var(--red50);border:1px solid var(--red100);padding:2px 9px;border-radius:6px}
+  section{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:24px 28px;margin-bottom:18px}
+  h2{font-size:19px;font-weight:600;margin:0 0 4px;padding-bottom:10px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  h2 .n{font-family:var(--mono);font-size:16px;padding:2px 10px;border-radius:7px;font-weight:700}
+  h2 .n.blue{background:var(--blue50);color:var(--blue800)} h2 .n.red{background:var(--red50);color:var(--red800)}
+  h2 .n.green{background:var(--green50);color:var(--green600)} h2 .n.amber{background:var(--amber50);color:var(--amber800)}
+  h2 .n.dark{background:var(--red800);color:#fff}
+  h2 .role{font-size:12px;font-weight:500;color:var(--muted);font-family:var(--sans)}
+  p{margin:9px 0}
+  .lead{background:var(--blue50);border-left:3px solid var(--blue600);padding:10px 15px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13.5px}
+  .howto{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:14px 18px;font-size:13px;line-height:1.8;margin:14px 0}
+  .howto b{color:var(--blue800)}
+  .figure{margin:14px 0 0;background:#fcfcfa;border:1px solid var(--line);border-radius:10px;padding:12px}
+  .figure svg{display:block;width:100%;height:auto}
+  .cap{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
+  .trans{margin-top:12px;background:var(--amber50);border:1px solid var(--amber100);border-left:3px solid var(--amber800);border-radius:0 9px 9px 0;padding:10px 15px;font-size:13px;line-height:1.7}
+  .trans b{color:var(--amber900);font-family:var(--mono)}
+  .trans.end{background:var(--red50);border-color:var(--red100);border-left-color:var(--red600)}
+  .trans.end b{color:var(--red800)}
+  .tablewrap{overflow-x:auto;margin:14px 0}
+  table{border-collapse:collapse;font-size:12px;min-width:940px;width:100%}
+  th{background:var(--surface);text-align:left;padding:8px 9px;border:1px solid var(--line);font-weight:600;color:var(--gray800);white-space:nowrap}
+  td{padding:8px 9px;border:1px solid var(--line);vertical-align:top;line-height:1.55}
+  tbody tr:nth-child(even){background:#fcfcfa}
+  td.t{font-family:var(--mono);font-weight:700;white-space:nowrap}
+  td.t.blue{color:var(--blue600)} td.t.red{color:var(--red600)} td.t.green{color:var(--green600)} td.t.amber{color:var(--amber800)} td.t.dark{color:var(--red800)}
+  code{font-family:var(--mono);font-size:12px;background:var(--surface);padding:1px 5px;border-radius:4px;color:var(--blue800)}
+  .tag{display:inline-block;font-size:11px;font-family:var(--mono);padding:1px 7px;border-radius:5px;background:var(--blue50);color:var(--blue800);border:1px solid var(--blue100)}
+  .tag.bad{background:var(--red50);color:var(--red800);border-color:var(--red100)}
+  .tag.ok{background:var(--green50);color:var(--green600);border-color:var(--green100)}
+  .tag.amb{background:var(--amber50);color:var(--amber800);border-color:var(--amber100)}
+  .note{background:var(--green50);border-left:3px solid var(--green600);padding:11px 15px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .warn{background:var(--red50);border-left:3px solid var(--red600);padding:11px 15px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  footer{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin-top:8px;line-height:1.8}
+  @media print{body{background:#fff}.wrap{max-width:none;padding:0}section,nav.toc,header.top{break-inside:avoid;border-color:#ccc}nav.toc{display:none}}
+  @media (max-width:760px){.cards{grid-template-columns:1fr}.wrap{padding:16px 12px 50px}section{padding:18px 14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>逐帧全维度时间线:一块内存如何从申请走到 core</h1>
+  <p class="sub">以时间为唯一主线。每个时刻把 <b>完整 chunk 结构 / 业务动作 / tcache(分线程) / fastbin 链 / 检查点</b> 摆在同一屏,并说明它如何变成下一刻。</p>
+  <div class="cards">
+    <div class="card"><b>怎么读</b>先看总览表建立全局,再逐帧看"状态快照 + 转变框"。每帧只回答两件事:这一刻各维度是什么、它是怎么变成下一刻的。</div>
+    <div class="card green"><b>本版新增</b>内存区画出<b>完整 chunk</b>:<code>prev_size(8B) + size(8B)</code> 头 + 用户区(整块连续,虚线标出前8B fd/next、次8B key 与其余数据);fastbin 改画成<b>链式结构</b>(链头→节点→NULL),节点标出 <code>fd</code> 指向。</div>
+    <div class="card amber"><b>锁定的硬事实</b>glibc 2.35;报错串 <code>double free or corruption (fasttop)</code>;B 在线程池线程,与主线程不同;core 栈只有 libc 帧。</div>
+  </div>
+  <div class="howto"><b>贯穿全篇的一句话:</b>同一块 chunk 的用户区开头 8 字节,被 glibc 当作链表指针(<code>fd</code>/<code>next</code>)反复借用,又被业务当作数据反复覆盖;glibc 只在每次 <code>malloc</code>/<code>free</code> 的调用点看一眼链头或 key,中间全程不查。破坏在 T4,报错在 T8,core 只拍下 T8 那一帧。每帧下方的橙色框,就是"这一帧 → 下一帧"的因果。</div>
+</header>
+<nav class="toc">
+  <b>目录</b>
+  <a href="#overview">0 总览表</a>
+  <a href="#f0">T0 申请</a><a href="#f1">T1 首次释放</a><a href="#f2">T2 跨线程取到</a>
+  <a href="#f3">T3 写哈希</a><a href="#f4">T4 破坏点</a><a href="#f5">T5 正常释放</a>
+  <a href="#f6">T6 线程退出</a><a href="#f7">T7 静默</a><a href="#f8">T8 core</a>
+  <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)"><b>关联文档</b>
+  <a class="link" href="double-free-timeline-2.35.html">机制版时间线</a><a class="link" href="malloc-tcache-explained.html">分配器机制篇</a><a class="link" href="glibc-heap-principles.html">故障分析手册</a></div>
+</nav>
+<section id="overview">
+<h2><span class="n blue">00</span>总览表:9 个时刻 × 全部维度</h2>
+<p>一行一个时刻,横向读完就是这一刻的完整状态;最后一列说明它如何变成下一刻。表格可左右滚动。tcache 明确拆成三个线程。</p>
+<div class="tablewrap"><table>
+<thead><tr><th>时刻</th><th>业务动作</th><th>chunk P(头+用户区)</th><th>tcache-A</th><th>tcache-B</th><th>tcache-主</th><th>fastbin 链</th><th>此刻检查点</th><th>→ 下一时刻</th></tr></thead>
+<tbody>
+<tr>
+<td class="t blue">T0</td>
+<td>A 线程调用 malloc(size),得到 chunk P,指针 p。;A 向用户区写入业务数据(含开头 16 字节)。</td>
+<td>prev_size/size 头 + 前8B:A 业务数据<br>次8B:A 业务数据<br><b>归属:P 被 A 占用(已分配)</b></td>
+<td>该档无 P</td>
+<td>无 P</td>
+<td>无 P</td>
+<td>链头 → X → X2 → NULL<br><i>P 不在 fastbin 链上</i></td>
+<td>malloc 调用点:分配正常,无异常。</td>
+<td>A 用完这块内存,准备调用 free(p) → 进入 T1。</td>
+</tr>
+<tr>
+<td class="t red">T1</td>
+<td>A 调用 free(p),但没有把 p 置为 NULL。;A 的 tcache 该档已满 → P 落到共享 fastbin。</td>
+<td>prev_size/size 头 + 前8B:fd=X(编码)<br>次8B:A 数据残留<br><b>归属:P 空闲,成为 fastbin 链头</b></td>
+<td>该档满(7块),无 P</td>
+<td>无 P</td>
+<td>无 P</td>
+<td>链头 → P → X → NULL<br><i>fasttop:旧链头 X ≠ p → 正常挂入</i></td>
+<td>fasttop:旧链头 X ≠ p → 放行(P 成为新链头)。</td>
+<td>B 线程 malloc 同尺寸:先查自己 tcache(无 P)→ 下探共享 fastbin 取到 P → T2。</td>
+</tr>
+<tr>
+<td class="t green">T2</td>
+<td>B 线程 malloc(同尺寸),先查 B 的 tcache(无 P)。;从共享 fastbin 链头取下 P → q == p。</td>
+<td>prev_size/size 头 + 前8B:fd 残留(未写)<br>次8B:A 数据残留<br><b>归属:P 被 B 占用</b></td>
+<td>该档满,无 P</td>
+<td>原为空,未命中</td>
+<td>无 P</td>
+<td>链头 → X → NULL<br><i>P 被从链头取下,不在链上</i></td>
+<td>fastbin 取出:size 档匹配;tcache_get 对齐:正常。</td>
+<td>B 开始向用户区写入哈希数据 → T3。</td>
+</tr>
+<tr>
+<td class="t green">T3</td>
+<td>B 向用户区写入哈希数据(整块)。;前 8 字节的 fd 被业务数据覆盖。</td>
+<td>prev_size/size 头 + 前8B:B 哈希数据(盖掉fd)<br>次8B:B 哈希数据<br><b>归属:P 被 B 占用</b></td>
+<td>该档满,无 P</td>
+<td>无 P</td>
+<td>无 P</td>
+<td>链头 → X → NULL<br><i>P 不在链上(无变化)</i></td>
+<td>这一步没有 malloc/free → 无任何检查发生。</td>
+<td>A 此时用旧指针 p 再次调用 free(p) → T4。</td>
+</tr>
+<tr>
+<td class="t red">T4</td>
+<td>A 用悬垂指针 p 调用 free(p)。;A 不知道 P 已被 B 使用;P 又被挂回 fastbin。</td>
+<td>prev_size/size 头 + 前8B:fd=Y(编码)<br>次8B:B 哈希残留(key位未动)<br><b>归属:P 同时被 B 占用 + 在 fastbin(一内存两主)</b></td>
+<td>该档满,无 P</td>
+<td>无 P</td>
+<td>无 P</td>
+<td>链头 → P → Y → NULL<br><i>链头 Y ≠ p → 放行 → P 挂成新链头</i></td>
+<td>fasttop:链头 Y ≠ p(P 在 B 手里,不在链上)→ 放行(漏检)。</td>
+<td>B 完成哈希,正常调用 free(q) → T5。</td>
+</tr>
+<tr>
+<td class="t green">T5</td>
+<td>B 调用 free(q),q == p。;写 key 前先读旧值 = B 的哈希数据 ≠ tcache(B) → 放行。</td>
+<td>prev_size/size 头 + 前8B:next=链头(编码)<br>次8B:key=tcache(B)<br><b>归属:P 在 B 的 tcache,同时仍在 fastbin(两容器重复)</b></td>
+<td>该档满,无 P</td>
+<td>P 成为链头</td>
+<td>无 P</td>
+<td>链头 → P → Y → NULL<br><i>P 仍在 fastbin(T4挂的),同时进了 B 的 tcache</i></td>
+<td>tcache key 检查:key ≠ tcache → 放行;未碰 fastbin 的 fasttop。</td>
+<td>B 线程完成任务后正常退出 → T6。</td>
+</tr>
+<tr>
+<td class="t amber">T6</td>
+<td>B 线程退出,tcache 里的块被冲刷回 arena。;P 从 B 的 tcache 出来,又进共享 fastbin。</td>
+<td>prev_size/size 头 + 前8B:fd=链头(编码)<br>次8B:旧 key 残留<br><b>归属:P 回到共享 fastbin(链上出现两个 P)</b></td>
+<td>该档满,无 P</td>
+<td>被清空(P 归还 arena)</td>
+<td>无 P</td>
+<td>链头 → P → P → Y → NULL<br><i>两个 P:一次来自 T4,一次来自 T6 冲刷 → 重复挂载</i></td>
+<td>冲刷走内部路径,无 fasttop;能正常退出说明未形成自环死链。</td>
+<td>主流程继续执行其它业务,没人再申请这一尺寸档 → T7。</td>
+</tr>
+<tr>
+<td class="t amber">T7</td>
+<td>主流程执行其它业务,不碰这一尺寸档。;P 一直躺在 fastbin 链里,内容不变。</td>
+<td>prev_size/size 头 + 前8B:fd(不变)<br>次8B:旧 key 残留(不变)<br><b>归属:P 躺在 fastbin(重复挂载持续)</b></td>
+<td>无变化</td>
+<td>无变化</td>
+<td>无变化</td>
+<td>链头 → P → P → Y → NULL<br><i>重复的两个 P 仍在链上,无人触碰</i></td>
+<td>无 malloc/free 触碰 → 无任何检查(可持续数分钟)。</td>
+<td>进程开始退出,libc 执行收尾释放 → T8。</td>
+</tr>
+<tr>
+<td class="t dark">T8</td>
+<td>exit → __run_exit_handlers → _IO_cleanup → free(stdio 缓冲)。;某次待 free 的块 == 当时 fastbin 链头。</td>
+<td>prev_size/size 头 + 前8B:前 16B 无新变化<br>次8B:—<br><b>归属:P 在 fastbin(错账持续)</b></td>
+<td>—</td>
+<td>线程已退出</td>
+<td>主线程 tcache 参与收尾</td>
+<td>链头 → P → P → NULL<br><i>fasttop 命中 → malloc_printerr → abort</i></td>
+<td>fasttop 命中 → malloc_printerr → abort → SIGABRT → core。</td>
+<td>(终点)core 是这一瞬的快照,栈顶是纯 libc 帧,没有埋雷者的调用栈。</td>
+</tr>
+</tbody></table></div>
+<div class="note"><b>看表要点:</b>沿 tcache 三列竖看,P 从没同时出现在两列 tcache;而 fastbin 链列从 T1 起反复出现 P,T4 后甚至出现两个 P。这印证:问题出在<b>共享 fastbin</b>——它能跨线程被 B 取到,线程私有的 tcache 做不到。</div>
+</section>
+<section id="f0">
+<h2><span class="n blue">T0</span>A 申请内存 <span class="role">· A 线程</span></h2>
+<div class="lead">组件 A 申请一块内存,向用户区写入自己的业务数据。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar0" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T0 A 申请内存 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#185fa5"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T0</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#0c447c" font-family="sans-serif">A 申请内存</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">组件 A 申请一块内存,向用户区写入自己的业务数据。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#0c447c" font-family="sans-serif">A 线程调用 malloc(size),得到 chunk P,指针 p。</text>
+<text x="54" y="123" font-size="11.5" fill="#0c447c" font-family="sans-serif">A 向用户区写入业务数据(含开头 16 字节)。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#e6f1fb" stroke="#185fa5" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#0c447c" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#0c447c" font-family="sans-serif">A 业务数据</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#185fa5" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#185fa5" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#0c447c" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#0c447c" font-family="sans-serif">A 业务数据</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#0c447c" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#0c447c" font-family="sans-serif">A 的业务数据</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#185fa5" font-weight="600">P 被 A 占用(已分配)</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">该档无 P</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):链头=X</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar0)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">X</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M234 411 L252 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar0)"/>
+<rect x="254" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="292" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">X2</text>
+<text x="292" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M328 411 L346 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar0)"/>
+<text x="350" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">P 不在 fastbin 链上</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#173404" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#173404" font-family="sans-serif">malloc 调用点:分配正常,无异常。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 1 · T0 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans"><b>↓ 到 T1 的转变</b> A 用完这块内存,准备调用 free(p) → 进入 T1。</div>
+</section>
+<section id="f1">
+<h2><span class="n red">T1</span>A 首次释放 <span class="role">· A 线程</span></h2>
+<div class="lead">A 调 free(p);块进共享 fastbin;但 A 没把 p 置为 NULL。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar1" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T1 A 首次释放 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#a32d2d"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T1</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#501313" font-family="sans-serif">A 首次释放</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">A 调 free(p);块进共享 fastbin;但 A 没把 p 置为 NULL。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#f7c1c1" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#501313" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#501313" font-family="sans-serif">A 调用 free(p),但没有把 p 置为 NULL。</text>
+<text x="54" y="123" font-size="11.5" fill="#501313" font-family="sans-serif">A 的 tcache 该档已满 → P 落到共享 fastbin。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#f7c1c1" stroke="#a32d2d" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#501313" font-family="sans-serif">fd=X(编码)</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#a32d2d" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#a32d2d" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#501313" font-family="sans-serif">A 数据残留</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#501313" font-family="sans-serif">A 数据残留</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#a32d2d" font-weight="600">P 空闲,成为 fastbin 链头</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">该档满(7块),无 P</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):链头=P(刚挂)</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar1)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→X</text>
+<path d="M234 411 L252 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar1)"/>
+<rect x="254" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="292" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">X</text>
+<text x="292" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M328 411 L346 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar1)"/>
+<text x="350" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">fasttop:旧链头 X ≠ p → 正常挂入</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#f7c1c1" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#501313" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#501313" font-family="sans-serif">fasttop:旧链头 X ≠ p → 放行(P 成为新链头)。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 2 · T1 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans"><b>↓ 到 T2 的转变</b> B 线程 malloc 同尺寸:先查自己 tcache(无 P)→ 下探共享 fastbin 取到 P → T2。</div>
+</section>
+<section id="f2">
+<h2><span class="n green">T2</span>B 跨线程取到同一块 <span class="role">· B 线程(线程池)</span></h2>
+<div class="lead">B 从共享 fastbin 取到 P;指针 q 与 A 手里的 p 是同一地址。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar2" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T2 B 跨线程取到同一块 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#3b6d11"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T2</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#173404" font-family="sans-serif">B 跨线程取到同一块</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">B 从共享 fastbin 取到 P;指针 q 与 A 手里的 p 是同一地址。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#173404" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#173404" font-family="sans-serif">B 线程 malloc(同尺寸),先查 B 的 tcache(无 P)。</text>
+<text x="54" y="123" font-size="11.5" fill="#173404" font-family="sans-serif">从共享 fastbin 链头取下 P → q == p。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#eaf3de" stroke="#3b6d11" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">fd 残留(未写)</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#3b6d11" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#3b6d11" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">A 数据残留</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">未写 / 残留</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#3b6d11" font-weight="600">P 被 B 占用</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">该档满,无 P</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">原为空,未命中</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):链头=X</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar2)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">X</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M234 411 L252 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar2)"/>
+<text x="256" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">P 被从链头取下,不在链上</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#173404" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#173404" font-family="sans-serif">fastbin 取出:size 档匹配;tcache_get 对齐:正常。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 3 · T2 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans"><b>↓ 到 T3 的转变</b> B 开始向用户区写入哈希数据 → T3。</div>
+</section>
+<section id="f3">
+<h2><span class="n green">T3</span>B 写哈希覆盖 fd <span class="role">· B 线程</span></h2>
+<div class="lead">B 把哈希结果写进用户区;glibc 之前写在开头的 fd 被业务数据盖掉。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar3" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T3 B 写哈希覆盖 fd 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#3b6d11"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T3</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#173404" font-family="sans-serif">B 写哈希覆盖 fd</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">B 把哈希结果写进用户区;glibc 之前写在开头的 fd 被业务数据盖掉。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#173404" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#173404" font-family="sans-serif">B 向用户区写入哈希数据(整块)。</text>
+<text x="54" y="123" font-size="11.5" fill="#173404" font-family="sans-serif">前 8 字节的 fd 被业务数据覆盖。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#eaf3de" stroke="#3b6d11" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">B 哈希数据(盖掉fd)</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#3b6d11" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#3b6d11" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">B 哈希数据</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">B 的哈希数据</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#3b6d11" font-weight="600">P 被 B 占用</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">该档满,无 P</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):链头=X</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar3)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">X</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M234 411 L252 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar3)"/>
+<text x="256" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">P 不在链上(无变化)</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#173404" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#173404" font-family="sans-serif">这一步没有 malloc/free → 无任何检查发生。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 4 · T3 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans"><b>↓ 到 T4 的转变</b> A 此时用旧指针 p 再次调用 free(p) → T4。</div>
+</section>
+<section id="f4">
+<h2><span class="n red">T4</span>A 二次 free(破坏点) <span class="role">· A 线程(悬垂指针)</span></h2>
+<div class="lead">A 拿着早已无效的 p 再 free;此刻 P 正被 B 使用——真正的破坏在这一刻完成。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar4" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T4 A 二次 free(破坏点) 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#a32d2d"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T4</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#501313" font-family="sans-serif">A 二次 free(破坏点)</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">A 拿着早已无效的 p 再 free;此刻 P 正被 B 使用——真正的破坏在这一刻完成。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#f7c1c1" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#501313" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#501313" font-family="sans-serif">A 用悬垂指针 p 调用 free(p)。</text>
+<text x="54" y="123" font-size="11.5" fill="#501313" font-family="sans-serif">A 不知道 P 已被 B 使用;P 又被挂回 fastbin。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#f7c1c1" stroke="#a32d2d" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#501313" font-family="sans-serif">fd=Y(编码)</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#a32d2d" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#a32d2d" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#501313" font-family="sans-serif">B 哈希残留(key位未动)</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#501313" font-family="sans-serif">B 的哈希数据</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#a32d2d" font-weight="600">P 同时被 B 占用 + 在 fastbin(一内存两主)</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">该档满,无 P</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):检查时链头=Y</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar4)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→Y</text>
+<path d="M234 411 L252 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar4)"/>
+<rect x="254" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="292" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">Y</text>
+<text x="292" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M328 411 L346 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar4)"/>
+<text x="350" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">链头 Y ≠ p → 放行 → P 挂成新链头</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#f7c1c1" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#501313" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#501313" font-family="sans-serif">fasttop:链头 Y ≠ p(P 在 B 手里,不在链上)→ 放行(漏检)。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 5 · T4 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans"><b>↓ 到 T5 的转变</b> B 完成哈希,正常调用 free(q) → T5。</div>
+</section>
+<section id="f5">
+<h2><span class="n green">T5</span>B 正常释放 <span class="role">· B 线程</span></h2>
+<div class="lead">B 释放 q;从 glibc 看是一次普通释放,但同一块已被登记两次。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar5" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T5 B 正常释放 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#3b6d11"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T5</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#173404" font-family="sans-serif">B 正常释放</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">B 释放 q;从 glibc 看是一次普通释放,但同一块已被登记两次。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#173404" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#173404" font-family="sans-serif">B 调用 free(q),q == p。</text>
+<text x="54" y="123" font-size="11.5" fill="#173404" font-family="sans-serif">写 key 前先读旧值 = B 的哈希数据 ≠ tcache(B) → 放行。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#eaf3de" stroke="#3b6d11" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">next=链头(编码)</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#3b6d11" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#3b6d11" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">key=tcache(B)</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#173404" font-family="sans-serif">哈希数据残留</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#3b6d11" font-weight="600">P 在 B 的 tcache,同时仍在 fastbin(两容器重复)</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">该档满,无 P</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">P 成为链头</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):链头=P</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar5)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→Y</text>
+<path d="M234 411 L252 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar5)"/>
+<rect x="254" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="292" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">Y</text>
+<text x="292" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M328 411 L346 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar5)"/>
+<text x="350" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">P 仍在 fastbin(T4挂的),同时进了 B 的 tcache</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#eaf3de" stroke="#3b6d11" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#173404" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#173404" font-family="sans-serif">tcache key 检查:key ≠ tcache → 放行;未碰 fastbin 的 fasttop。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 6 · T5 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans"><b>↓ 到 T6 的转变</b> B 线程完成任务后正常退出 → T6。</div>
+</section>
+<section id="f6">
+<h2><span class="n amber">T6</span>B 线程退出冲刷 <span class="role">· B 线程退出</span></h2>
+<div class="lead">B 线程正常退出;tcache_thread_shutdown 把它私有 tcache 里的块归还 arena。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar6" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T6 B 线程退出冲刷 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#fac775"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T6</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#633806" font-family="sans-serif">B 线程退出冲刷</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">B 线程正常退出;tcache_thread_shutdown 把它私有 tcache 里的块归还 arena。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#633806" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#633806" font-family="sans-serif">B 线程退出,tcache 里的块被冲刷回 arena。</text>
+<text x="54" y="123" font-size="11.5" fill="#633806" font-family="sans-serif">P 从 B 的 tcache 出来,又进共享 fastbin。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#faeeda" stroke="#fac775" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#633806" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#633806" font-family="sans-serif">fd=链头(编码)</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#fac775" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#fac775" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#633806" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#633806" font-family="sans-serif">旧 key 残留</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#633806" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#633806" font-family="sans-serif">残留</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#fac775" font-weight="600">P 回到共享 fastbin(链上出现两个 P)</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">该档满,无 P</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">被清空(P 归还 arena)</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无 P</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):链头=P</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar6)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→P</text>
+<path d="M234 411 L252 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar6)"/>
+<rect x="254" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="292" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="292" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→Y</text>
+<path d="M328 411 L346 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar6)"/>
+<rect x="348" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="386" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">Y</text>
+<text x="386" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M422 411 L440 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar6)"/>
+<text x="444" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">两个 P:一次来自 T4,一次来自 T6 冲刷 → 重复挂载</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#633806" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#633806" font-family="sans-serif">冲刷走内部路径,无 fasttop;能正常退出说明未形成自环死链。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 7 · T6 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans"><b>↓ 到 T7 的转变</b> 主流程继续执行其它业务,没人再申请这一尺寸档 → T7。</div>
+</section>
+<section id="f7">
+<h2><span class="n amber">T7</span>静默期 <span class="role">· 无</span></h2>
+<div class="lead">没有任何 malloc/free 触碰这一档;坏链静静躺在 fastbin 里。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar7" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T7 静默期 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#fac775"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T7</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#633806" font-family="sans-serif">静默期</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">没有任何 malloc/free 触碰这一档;坏链静静躺在 fastbin 里。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#633806" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#633806" font-family="sans-serif">主流程执行其它业务,不碰这一尺寸档。</text>
+<text x="54" y="123" font-size="11.5" fill="#633806" font-family="sans-serif">P 一直躺在 fastbin 链里,内容不变。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#faeeda" stroke="#fac775" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#633806" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#633806" font-family="sans-serif">fd(不变)</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#fac775" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#fac775" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#633806" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#633806" font-family="sans-serif">旧 key 残留(不变)</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#633806" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#633806" font-family="sans-serif">残留(不变)</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#fac775" font-weight="600">P 躺在 fastbin(重复挂载持续)</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无变化</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无变化</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">无变化</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):链头=P</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar7)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→P</text>
+<path d="M234 411 L252 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar7)"/>
+<rect x="254" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="292" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="292" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→Y</text>
+<path d="M328 411 L346 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar7)"/>
+<rect x="348" y="388" width="76" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="386" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#501313" font-family="sans-serif">Y</text>
+<text x="386" y="425" text-anchor="middle" font-size="9.5" fill="#501313" font-family="sans-serif">fd→NULL</text>
+<path d="M422 411 L440 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar7)"/>
+<text x="444" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">重复的两个 P 仍在链上,无人触碰</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#faeeda" stroke="#fac775" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#633806" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#633806" font-family="sans-serif">无 malloc/free 触碰 → 无任何检查(可持续数分钟)。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 8 · T7 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans"><b>↓ 到 T8 的转变</b> 进程开始退出,libc 执行收尾释放 → T8。</div>
+</section>
+<section id="f8">
+<h2><span class="n dark">T8</span>退出期 core <span class="role">· libc 收尾</span></h2>
+<div class="lead">libc 收尾密集 free;某次待释放的块正好等于链头 → fasttop 命中。</div>
+<div class="figure"><svg viewBox="0 0 680 566" role="img" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ar8" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<title>T8 退出期 core 的全维度状态</title>
+<desc>该时刻的业务动作、完整 chunk 结构(prev_size/size/用户区)、P 归属、A/B/主线程 tcache、共享 fastbin 链结构,以及检查点与到下一时刻的转变。</desc>
+<rect x="40" y="14" width="52" height="28" rx="7" fill="#791f1f"/>
+<text x="66" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" font-family="sans-serif">T8</text>
+<text x="104" y="34" font-size="14" font-weight="600" fill="#ffffff" font-family="sans-serif">退出期 core</text>
+<text x="40" y="60" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">libc 收尾密集 free;某次待释放的块正好等于链头 → fasttop 命中。</text>
+<rect x="40" y="68" width="600" height="60" rx="8" fill="#a32d2d" stroke="#791f1f" stroke-width="0.5"/>
+<text x="54" y="88" font-size="11" font-weight="700" fill="#ffffff" font-family="sans-serif">① 业务动作</text>
+<text x="54" y="107" font-size="11.5" fill="#ffffff" font-family="sans-serif">exit → __run_exit_handlers → _IO_cleanup → free(stdio 缓冲)。</text>
+<text x="54" y="123" font-size="11.5" fill="#ffffff" font-family="sans-serif">某次待 free 的块 == 当时 fastbin 链头。</text>
+<rect x="40" y="136" width="600" height="112" rx="8" fill="#ffffff" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="54" y="156" font-size="11" font-weight="700" fill="#2c2c2a" font-family="sans-serif">② 内存实际情况:完整 chunk P(头 16B + 整块连续用户区)</text>
+<rect x="54" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="98" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">prev_size</text>
+<text x="98" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节</text>
+<rect x="142" y="166" width="88" height="46" rx="5" fill="#f1efe8" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="186" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5f5e5a" font-family="sans-serif">size</text>
+<text x="186" y="202" text-anchor="middle" font-size="10" fill="#5f5e5a" font-family="sans-serif">8 字节·含标志位</text>
+<rect x="230" y="166" width="404" height="46" rx="5" fill="#a32d2d" stroke="#791f1f" stroke-width="1"/>
+<text x="282" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ffffff" font-family="sans-serif">用户区前 8B</text>
+<text x="282" y="202" text-anchor="middle" font-size="10" fill="#ffffff" font-family="sans-serif">前 16B 无新变化</text>
+<line x1="334" y1="168" x2="334" y2="216" stroke="#791f1f" stroke-width="0.9" stroke-dasharray="3 3"/>
+<line x1="438" y1="168" x2="438" y2="216" stroke="#791f1f" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="386" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ffffff" font-family="sans-serif">用户区次 8B</text>
+<text x="386" y="202" text-anchor="middle" font-size="10" fill="#ffffff" font-family="sans-serif">—</text>
+<text x="536" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ffffff" font-family="sans-serif">其余用户数据</text>
+<text x="536" y="202" text-anchor="middle" font-size="10" fill="#ffffff" font-family="sans-serif">—</text>
+<text x="432" y="226" text-anchor="middle" font-size="9.5" fill="#888780" font-family="sans-serif">↑ 整块用户区连续一条;虚线仅标出字段位</text>
+<text x="54" y="235" font-size="11.5" fill="#2c2c2a" font-family="sans-serif">P 的归属:<tspan fill="#791f1f" font-weight="600">P 在 fastbin(错账持续)</tspan></text>
+<rect x="40" y="256" width="600" height="90" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="54" y="276" font-size="11" font-weight="700" fill="#0c447c" font-family="sans-serif">③ tcache(每线程私有 · 分别看 A / B / 主线程)</text>
+<rect x="54" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="64" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">A 线程 tcache</text>
+<text x="64" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">—</text>
+<rect x="247" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="257" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">B 线程 tcache</text>
+<text x="257" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">线程已退出</text>
+<rect x="440" y="284" width="186" height="52" rx="6" fill="#ffffff" stroke="#b5d4f4" stroke-width="0.5"/>
+<text x="450" y="302" font-size="10.5" font-weight="600" fill="#185fa5" font-family="sans-serif">主线程 tcache</text>
+<text x="450" y="321" font-size="10.5" fill="#0c447c" font-family="sans-serif">主线程 tcache 参与收尾</text>
+<rect x="40" y="354" width="600" height="122" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="374" font-size="11" font-weight="700" fill="#791f1f" font-family="sans-serif">④ fastbin 链(arena 共享):链头=P == 待free块</text>
+<rect x="54" y="388" width="88" height="46" rx="6" fill="#ffffff" stroke="#a32d2d" stroke-width="1"/>
+<text x="98" y="407" text-anchor="middle" font-size="10" fill="#791f1f" font-family="sans-serif">fastbin[idx]</text>
+<text x="98" y="424" text-anchor="middle" font-size="10.5" font-weight="700" fill="#a32d2d" font-family="sans-serif">链头</text>
+<path d="M140 411 L158 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar8)"/>
+<rect x="160" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="198" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="198" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→P</text>
+<path d="M234 411 L252 411" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#ar8)"/>
+<rect x="254" y="388" width="76" height="46" rx="6" fill="#a32d2d" stroke="#a32d2d" stroke-width="1"/>
+<text x="292" y="408" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="sans-serif">P</text>
+<text x="292" y="425" text-anchor="middle" font-size="9.5" fill="#ffffff" font-family="sans-serif">fd→Y</text>
+<path d="M328 411 L346 411" fill="none" stroke="#888780" stroke-width="1.4" marker-end="url(#ar8)"/>
+<text x="350" y="415" font-size="10.5" fill="#888780" font-family="sans-serif">NULL</text>
+<text x="54" y="463" font-size="10.5" fill="#791f1f" font-family="sans-serif">fasttop 命中 → malloc_printerr → abort</text>
+<rect x="40" y="484" width="600" height="66" rx="8" fill="#f7c1c1" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="54" y="504" font-size="11" font-weight="700" fill="#501313" font-family="sans-serif">此刻检查点</text>
+<text x="54" y="523" font-size="11.5" fill="#501313" font-family="sans-serif">fasttop 命中 → malloc_printerr → abort → SIGABRT → core。</text>
+<text x="54" y="542" font-size="9.5" fill="#888780" font-family="sans-serif">注:2.35 的 fd/next 存 safe-linking 编码值;图中 fd→ 表示逻辑指向。</text>
+</svg><div class="cap">图 9 · T8 的五维度状态快照:①业务动作 ②完整 chunk(头 16B + 整块连续用户区) ③tcache(分线程) ④fastbin 链结构 ⑤检查点。fastbin 节点标出 fd 逻辑指向,高亮为受关注的块。</div></div>
+<div class="trans end"><b>终点</b> (终点)core 是这一瞬的快照,栈顶是纯 libc 帧,没有埋雷者的调用栈。</div>
+
+<h3>T8 展开:fasttop 到底比对了什么</h3>
+<p>前面九帧只写了"fasttop 命中",这里把最后这一下展开。核心一句:<b>退出时没有任何东西在检查或扫描那条双挂链</b>。glibc 只是在退出阶段某次 <code>free(p)</code> 里做了一次指针相等比较 <code>链头 == p</code>,而这一次恰好相等。它不遍历、不查重、不数链上有几个 P。</p>
+<div class="figure">
+<svg viewBox="0 0 680 470" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>T8 触发 core 的那一次链头相等比较</title>
+<desc>上半展示退出阶段触发链:进程退出、收尾代码调用 free(P)、比对链头等于 P 成立、abort 产生 core。下半放大那次 free:fastbin 链头与 free 的参数同时指向块 P,相等比较成立;旁边另一份 P 表示双挂。底部说明没有扫描双挂这回事。</desc>
+<defs><marker id="mfa" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text x="40" y="34" font-size="12" fill="#5f5e5a" font-family="sans-serif">① 退出阶段实际发生了什么</text>
+<rect x="40" y="48" width="165" height="52" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="122" y="68" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0c447c" font-family="sans-serif">进程退出</text>
+<text x="122" y="87" text-anchor="middle" font-size="11.5" fill="#185fa5" font-family="sans-serif">exit → 收尾代码</text>
+<path d="M207 74 L223 74" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#mfa)"/>
+<rect x="225" y="48" width="175" height="52" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="312" y="68" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0c447c" font-family="sans-serif">某次 free(P)</text>
+<text x="312" y="87" text-anchor="middle" font-size="11.5" fill="#185fa5" font-family="sans-serif">P = 被释放块的地址</text>
+<path d="M402 74 L418 74" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#mfa)"/>
+<rect x="420" y="48" width="185" height="52" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="512" y="68" text-anchor="middle" font-size="12.5" font-weight="600" fill="#791f1f" font-family="sans-serif">链头 == P 成立</text>
+<text x="512" y="87" text-anchor="middle" font-size="11.5" fill="#a32d2d" font-family="sans-serif">abort → core</text>
+<text x="40" y="140" font-size="12" fill="#5f5e5a" font-family="sans-serif">② 放大那一次 free:glibc 只做了一件事</text>
+<rect x="60" y="170" width="140" height="46" rx="8" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+<text x="130" y="188" text-anchor="middle" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">fastbin 链头</text>
+<text x="130" y="205" text-anchor="middle" font-size="13" font-weight="600" fill="#2c2c2a" font-family="sans-serif">head</text>
+<rect x="60" y="265" width="140" height="46" rx="8" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="130" y="283" text-anchor="middle" font-size="11.5" fill="#185fa5" font-family="sans-serif">free 的参数</text>
+<text x="130" y="300" text-anchor="middle" font-size="13" font-weight="600" fill="#0c447c" font-family="sans-serif">p</text>
+<rect x="340" y="195" width="95" height="58" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="1"/>
+<text x="387" y="224" text-anchor="middle" font-size="16" font-weight="600" fill="#791f1f" font-family="sans-serif">P</text>
+<text x="387" y="242" text-anchor="middle" font-size="11" fill="#a32d2d" font-family="sans-serif">同一个块</text>
+<path d="M202 193 L336 216" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#mfa)"/>
+<path d="M202 288 L336 240" fill="none" stroke="#185fa5" stroke-width="1.5" marker-end="url(#mfa)"/>
+<rect x="500" y="205" width="72" height="40" rx="8" fill="#f1efe8" stroke="#888780" stroke-width="0.5"/>
+<text x="536" y="230" text-anchor="middle" font-size="12" fill="#5f5e5a" font-family="sans-serif">P（另一份）</text>
+<path d="M437 224 L496 224" fill="none" stroke="#888780" stroke-width="1.2" marker-end="url(#mfa)"/>
+<path d="M574 224 L600 224" fill="none" stroke="#888780" stroke-width="1.2" marker-end="url(#mfa)"/>
+<text x="604" y="228" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">NULL</text>
+<rect x="340" y="288" width="235" height="46" rx="8" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="457" y="307" text-anchor="middle" font-size="12.5" font-weight="600" fill="#791f1f" font-family="sans-serif">head == p → 相等</text>
+<text x="457" y="325" text-anchor="middle" font-size="11.5" fill="#a32d2d" font-family="sans-serif">fasttop → abort → core</text>
+<rect x="40" y="360" width="565" height="88" rx="10" fill="#faeeda" stroke="#854f0b" stroke-width="0.5"/>
+<text x="56" y="383" font-size="12.5" font-weight="600" fill="#633806" font-family="sans-serif">关键:退出时没有"扫描双挂"</text>
+<text x="56" y="406" font-size="11.5" fill="#633806" font-family="sans-serif">glibc 从不遍历链,也不数 P 挂了几次;它只比了 head 和 p 这一个指针。</text>
+<text x="56" y="428" font-size="11.5" fill="#633806" font-family="sans-serif">双挂不是"被发现",而是让 P 停在链头,这次 free(P) 一比就相等。</text>
+</svg>
+<div class="cap">图 10 · T8 那一次 free 的展开。fasttop 只是 <code>_int_free</code> 里的一句指针比较,命中条件是"待释放块正好是当时链头"——和链上有没有重复、有没有自环无关。</div>
+</div>
+
+<p>那退出时要释放的块,凭什么跟 fastbin 扯上关系?因为<b>缓冲区本身就是 malloc 出来的普通内存</b>,和 fastbin 里的块同属一个 malloc 池、同一套 bin 体系。一块地址 P 的块,这会儿被 malloc 走当缓冲区,下次 free 就躺在 fastbin,地址始终是 P。你场景里的"关联"不是正常形成的,是 T4 非法 free 制造的重叠:同一地址既被当小块在用,又被挂成了 fastbin 链头。</p>
+<div class="figure">
+<svg viewBox="0 0 680 400" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>缓冲区与 fastbin 是同一块内存的两个状态</title>
+<desc>上半展示同一块内存 P 在使用中与空闲之间靠 malloc 和 free 来回切换,地址不变。下半展示本场景的错位:P 被非法 free 挂在 fastbin 链头形成假账,同时又作为小块被持有,退出时 free(P) 与链头撞上触发 fasttop。</desc>
+<defs><marker id="mfb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text x="40" y="32" font-size="12" fill="#5f5e5a" font-family="sans-serif">一般规则:同一块内存,地址不变,身份来回切</text>
+<rect x="60" y="48" width="220" height="70" rx="10" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="170" y="70" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0c447c" font-family="sans-serif">使用中</text>
+<text x="170" y="90" text-anchor="middle" font-size="11.5" fill="#185fa5" font-family="sans-serif">malloc 出来当缓冲区</text>
+<text x="170" y="107" text-anchor="middle" font-size="11.5" fill="#185fa5" font-family="sans-serif">地址 = P</text>
+<rect x="400" y="48" width="220" height="70" rx="10" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+<text x="510" y="70" text-anchor="middle" font-size="12.5" font-weight="600" fill="#2c2c2a" font-family="sans-serif">空闲</text>
+<text x="510" y="90" text-anchor="middle" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">躺在 fastbin 链上</text>
+<text x="510" y="107" text-anchor="middle" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">地址 = P</text>
+<path d="M282 68 L398 68" fill="none" stroke="#a32d2d" stroke-width="1.5" marker-end="url(#mfb)"/>
+<text x="340" y="60" text-anchor="middle" font-size="11.5" fill="#a32d2d" font-family="sans-serif">free</text>
+<path d="M398 100 L282 100" fill="none" stroke="#185fa5" stroke-width="1.5" marker-end="url(#mfb)"/>
+<text x="340" y="116" text-anchor="middle" font-size="11.5" fill="#185fa5" font-family="sans-serif">malloc</text>
+<text x="40" y="156" font-size="11.5" fill="#5f5e5a" font-family="sans-serif">缓冲区块就是 malloc 出来的普通内存,用的是同一套 bin 体系——所以它能躺在 fastbin 里,也能被 free 回去。</text>
+<line x1="40" y1="176" x2="640" y2="176" stroke="#d3d1c7" stroke-width="0.5"/>
+<text x="40" y="202" font-size="12" fill="#5f5e5a" font-family="sans-serif">本场景:P 的两个身份同时存在(双挂)</text>
+<rect x="55" y="218" width="255" height="66" rx="10" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.5"/>
+<text x="182" y="240" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0c447c" font-family="sans-serif">真身:被当小块用</text>
+<text x="182" y="260" text-anchor="middle" font-size="11.5" fill="#185fa5" font-family="sans-serif">退出时 libc 要 free 它</text>
+<text x="182" y="277" text-anchor="middle" font-size="11.5" fill="#185fa5" font-family="sans-serif">待释放地址 = P</text>
+<rect x="370" y="218" width="255" height="66" rx="10" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="497" y="240" text-anchor="middle" font-size="12.5" font-weight="600" fill="#791f1f" font-family="sans-serif">假账:挂在 fastbin 链头</text>
+<text x="497" y="260" text-anchor="middle" font-size="11.5" fill="#a32d2d" font-family="sans-serif">T4 非法 free 留下的</text>
+<text x="497" y="277" text-anchor="middle" font-size="11.5" fill="#a32d2d" font-family="sans-serif">链头地址 = P</text>
+<path d="M182 286 L300 328" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#mfb)"/>
+<path d="M497 286 L380 328" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#mfb)"/>
+<rect x="240" y="332" width="200" height="50" rx="10" fill="#fcebeb" stroke="#a32d2d" stroke-width="0.5"/>
+<text x="340" y="353" text-anchor="middle" font-size="12.5" font-weight="600" fill="#791f1f" font-family="sans-serif">free(P):p == 链头</text>
+<text x="340" y="371" text-anchor="middle" font-size="11.5" fill="#a32d2d" font-family="sans-serif">fasttop → abort → core</text>
+</svg>
+<div class="cap">图 11 · 缓冲区与 fastbin 的关系。不是"从链头正常取出当缓冲区"(那样 P 就不在链头了,不会报错),而是非法 free 让 P 一边在用、一边还挂在链头——两个身份重叠在同一地址上。</div>
+</div>
+
+<table>
+<thead><tr><th>说法</th><th>判定</th><th>准确表述</th></tr></thead>
+<tbody>
+<tr><td>退出时 glibc 申请了这块内存,释放时发现和链头一致</td><td>半对</td><td>"释放时链头一致"对;"退出时申请"错——那块是很早 malloc 的,退出时只是还回去</td></tr>
+<tr><td>退出时把 fastbin 上的内存逐步释放(清空 bin)</td><td>错</td><td>glibc 退出不遍历、不清空任何 bin;内核直接回收地址空间</td></tr>
+<tr><td>退出清理 free 一个持有中的小块,地址撞上链头</td><td>对</td><td>这才是实际发生的;前提是非法 free 让同一地址既在用又挂链头</td></tr>
+</tbody>
+</table>
+<div class="note"><b>尺寸前提:</b>触发 fasttop 的块必须是 fastbin 尺寸档(64 位下通常不超过 128 字节)。stdio 缓冲区通常 4KB,走 unsorted/large bin,进不了 fastbin——所以真正触发的那次 free 一定是个<b>小块</b>,更可能是 libc 内部的小结构(这解释了纯 libc 栈),也可能是某个小缓冲区;具体是哪一块,从 core 反推不出来。</div>
+<div class="warn"><b>本帧能证明 / 不能证明:</b>能证明——报错串对应 <code>_int_free</code> 在 fastbin 插入前的链头比对 <code>old == p</code>,属调用点确定性校验,core 是该瞬间快照。不能证明——退出时具体是谁调用的那次 free、那块小块的具体身份、P 是怎么回到链头的、"约 4 分钟"的时长;这些标"待证",内网侧不确认就别写死。</div>
+</section>
+<div class="warn"><b>必须诚实的地方:</b>本时间线是一条能同时解释所有"确定事实"的自洽主线。下列环节从退出时的 core 反推不出来,复盘须标"待证":块为何进 fastbin(T1 采用"该档 tcache 已满"这一主线假设);T4 到 T8 之间 fastbin 链的具体进出序列(图中两个 P 的顺序为机制推断);最终命中 fasttop 的那次 free 由谁发起;"约 4 分钟"的静默时长;"只释放了一部分"的具体数据范围。</div>
+<footer>
+  本文件基于 glibc 2.35 的通用机制与用户提供的确定事实推演,全程未联网、未涉及任何业务代码或内网数据。所有"待证"项在内网侧确认前不得写死。<br>
+  体系:底层地基篇 → 分配器机制篇 → 机制版时间线 → <b>本逐帧全维度时间线</b> → 故障分析手册。
+</footer>
+</div>
+</body>
+</html>
